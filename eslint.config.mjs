@@ -31,7 +31,7 @@ export default tseslint.config(
       '@stylistic/semi': ['error', 'always'],
       '@stylistic/quotes': ['error', 'single'],
       '@stylistic/indent': ['error', 2],
-      '@stylistic/comma-dangle': ['error', 'all'],
+      '@stylistic/comma-dangle': ['error', 'always-multiline'],
       '@stylistic/arrow-parens': ['error', 'always'],
       'unicorn/filename-case': 'off',
       'unicorn/prefer-module': 'off',

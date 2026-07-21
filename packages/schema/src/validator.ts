@@ -18,7 +18,6 @@ function getAjv(): Ajv {
       allErrors: true,
       strict: true,
       strictSchema: true,
-      unevaluatedProperties: false,
       useDefaults: true,
       coerceTypes: false,
     });

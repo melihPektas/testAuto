@@ -69,7 +69,7 @@ export function createHooks<Ctx>(): HooksImpl<Ctx> {
         `Unknown hook name: ${name}`,
         { context: { name } },
       );
-    );
+    }
     return set;
   }
 

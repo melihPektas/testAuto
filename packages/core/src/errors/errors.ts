@@ -19,7 +19,7 @@ export interface OrchestratorErrorOptions {
 
 export class OrchestratorError extends Error {
   public readonly code: OrchestratorErrorCode;
-  public readonly cause?: unknown;
+  public override readonly cause?: unknown;
   public readonly context?: Record<string, unknown>;
   public override readonly name = 'OrchestratorError';
 
