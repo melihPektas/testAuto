@@ -54,7 +54,14 @@ export function registerCommands(program: Command): void {
         id: name,
         version: '1.0',
         name,
-        steps: [{ id: 'step-1', action: 'noop' }],
+        description: `Generated test case: ${name}`,
+        tags: ['generated'],
+        runner: 'default',
+        steps: [
+          { id: 'step-1', action: `echo "running ${name}"`, description: 'first step' },
+        ],
+        timeout: 30000,
+        retry: 0,
       };
       try {
         await writeFile(output, `${JSON.stringify(template, null, 2)}\n`, 'utf8');

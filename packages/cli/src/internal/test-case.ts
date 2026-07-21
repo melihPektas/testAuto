@@ -1,7 +1,7 @@
 import { OrchestratorError } from './errors.js';
 
 export interface TestStep {
-  id: string;
+  id?: string;
   action: string;
   target?: string;
   value?: unknown;
@@ -73,8 +73,9 @@ export function validateTestCase(input: unknown): ValidationResult {
         return;
       }
       const s = step as Record<string, unknown>;
-      if (typeof s["id"] !== 'string' || s["id"].length === 0) {
-        errors.push(`steps[${idx}].id must be a non-empty string`);
+      // `id` is optional per the JSON schema; only validate it when present.
+      if (s["id"] !== undefined && (typeof s["id"] !== 'string' || s["id"].length === 0)) {
+        errors.push(`steps[${idx}].id must be a non-empty string when provided`);
       }
       if (typeof s["action"] !== 'string' || s["action"].length === 0) {
         errors.push(`steps[${idx}].action must be a non-empty string`);

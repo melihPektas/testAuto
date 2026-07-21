@@ -18,6 +18,14 @@ describe('validateTestCase', () => {
     expect(validateTestCase(validCase)).toEqual({ valid: true, errors: [] });
   });
 
+  it('accepts a step without an id (id is optional per schema)', () => {
+    const result = validateTestCase({
+      ...validCase,
+      steps: [{ action: 'click' }],
+    });
+    expect(result).toEqual({ valid: true, errors: [] });
+  });
+
   it('rejects a non-object', () => {
     expect(validateTestCase(42).valid).toBe(false);
   });
