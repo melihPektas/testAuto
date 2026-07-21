@@ -1,4 +1,5 @@
 export type OrchestratorErrorCode =
+  | 'ORCH_CONFIG_LOAD'
   | 'ORCH_CONFIG_NOT_FOUND'
   | 'ORCH_CONFIG_INVALID'
   | 'ORCH_TEST_CASE_INVALID'
