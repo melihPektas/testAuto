@@ -1,4 +1,5 @@
-import Ajv, { type ErrorObject } from 'ajv';
+import Ajv2020 from 'ajv/dist/2020.js';
+import { type ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 
 import { configSchema } from './config/schema.js';
@@ -10,11 +11,11 @@ export type SchemaValidationResult<T> =
   | { ok: true; data: T }
   | { ok: false; errors: ErrorObject<string, Record<string, any>, unknown>[] };
 
-let ajvInstance: Ajv | undefined;
+let ajvInstance: Ajv2020 | undefined;
 
-function getAjv(): Ajv {
+function getAjv(): Ajv2020 {
   if (ajvInstance === undefined) {
-    ajvInstance = new Ajv({
+    ajvInstance = new Ajv2020({
       allErrors: true,
       strict: true,
       strictSchema: true,
