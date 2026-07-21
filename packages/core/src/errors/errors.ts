@@ -30,6 +30,9 @@ export class OrchestratorError extends Error {
   ) {
     super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
     this.code = code;
+    // Assign explicitly: the declared `cause` class field would otherwise
+    // re-initialise to undefined and clobber the value set via super().
+    this.cause = options?.cause;
     this.context = options?.context;
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
