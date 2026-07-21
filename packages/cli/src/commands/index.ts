@@ -1,9 +1,16 @@
-import { writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
+import {
+  executeRun,
+  createRunnerRegistry,
+  createShellRunner,
+} from '@test-orchestrator/core';
+import type { Reporter, RunOptions } from '@test-orchestrator/core';
 import type { Command } from 'commander';
 
 import { resolveConfig } from '../internal/config-loader.js';
+import { assertValidTestCase } from '../internal/test-case.js';
 import { createLogger } from '../internal/logger.js';
 
 const logger = createLogger();
@@ -59,15 +66,65 @@ export function registerCommands(program: Command): void {
 
   program
     .command('run')
-    .description('Load a config and report its runners')
+    .description('Load a config, discover test cases and execute them')
     .option('-c, --config <path>', 'path to config file')
+    .option('-t, --tests <dir>', 'directory holding *.test-case.json files', '.')
     .action(async (opts: Record<string, unknown>) => {
       try {
         const configPath = opts['config'] === undefined ? undefined : String(opts['config']);
         const { path, config } = await resolveConfig(configPath);
-        logger.info(`loaded "${config.name}" from ${path} with ${config.runners.length} runner(s)`);
+        logger.info(`loaded "${config.name}" from ${path}`);
+
+        const testsDir = resolve(process.cwd(), String(opts['tests'] ?? '.'));
+        const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json'));
+        if (files.length === 0) {
+          logger.warn(`no *.test-case.json files found in ${testsDir}`);
+          return;
+        }
+
+        const testCases: unknown[] = [];
+        for (const file of files) {
+          const parsed: unknown = JSON.parse(await readFile(join(testsDir, file), 'utf8'));
+          assertValidTestCase(parsed);
+          testCases.push(parsed);
+        }
+        logger.info(`discovered ${testCases.length} test case(s) in ${testsDir}`);
+
+        const runners = createRunnerRegistry();
+        for (const runner of config.runners) {
+          runners.register(createShellRunner(runner.name));
+        }
+
+        const reporter: Reporter = {
+          kind: 'reporter',
+          name: 'cli',
+          type: 'cli',
+          onEvent: (event) => {
+            if (event.type === 'test:end') {
+              const r = event.result;
+              const mark = r.status === 'pass' ? 'PASS' : r.status === 'flaky' ? 'FLAKY' : 'FAIL';
+              logger.info(`  [${mark}] ${r.testCaseName} (${r.durationMs}ms)`);
+            }
+          },
+        };
+
+        const summary = await executeRun({
+          config: config as unknown as RunOptions['config'],
+          testCases: testCases as unknown as RunOptions['testCases'],
+          runners,
+          reporters: [reporter],
+          logger,
+        });
+
+        logger.info(
+          `done: ${summary.passed} passed, ${summary.failed} failed, ${summary.flaky} flaky (${summary.durationMs}ms)`,
+        );
+        if (summary.status === 'fail') {
+          process.exitCode = 1;
+        }
       } catch (err) {
         logger.error((err as Error).message);
+        process.exitCode = 1;
       }
     });
 
