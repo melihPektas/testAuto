@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isArrayOf<T>(value: unknown, predicate: (item: unknown) => item is T): value is T[] {
+function isArrayOf<T>(value: unknown, predicate: (item: unknown) => boolean): value is T[] {
   return Array.isArray(value) && value.every((item) => predicate(item));
 }
 
