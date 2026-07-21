@@ -3,6 +3,7 @@ export * from './registry/index.js';
 export * from './hooks/index.js';
 export * from './utils/index.js';
 export * from './engine/index.js';
+export * from './runners/index.js';
 export * from './types.js';
 
 // Disambiguate: PluginRegistry is declared in both ./types.js and the registry
