@@ -59,7 +59,11 @@ describe('executeRun', () => {
     let calls = 0;
     const runner = makeRunner(() => {
       calls += 1;
-      return { status: 'fail', durationMs: 1 } satisfies StepResult;
+      return {
+        status: 'fail',
+        durationMs: 1,
+        error: { message: 'nope', code: 'ORCH_STEP_FAILED' },
+      } satisfies StepResult;
     });
     const summary = await executeRun({
       config: makeConfig(),
@@ -71,6 +75,8 @@ describe('executeRun', () => {
     // second step must be skipped after the first fails
     expect(calls).toBe(1);
     expect(summary.results[0]?.steps).toHaveLength(1);
+    // the failing step's error is surfaced at the test level
+    expect(summary.results[0]?.error?.message).toBe('nope');
   });
 
   it('marks a test flaky when a step passes only after a retry', async () => {

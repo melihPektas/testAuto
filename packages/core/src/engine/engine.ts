@@ -222,7 +222,7 @@ async function runTestCase(
       ? 'flaky'
       : 'pass';
 
-  return {
+  const result: TestResult = {
     testCaseId: testCase.id,
     testCaseName: testCase.name,
     status,
@@ -231,6 +231,9 @@ async function runTestCase(
     startedAt,
     finishedAt,
   };
+  // Surface the failing step's error at the test level so reporters can show it.
+  const failedStep = steps.find((s) => s.status === 'fail');
+  return failedStep?.error === undefined ? result : { ...result, error: failedStep.error };
 }
 
 /**

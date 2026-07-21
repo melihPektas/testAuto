@@ -5,6 +5,8 @@ import {
   executeRun,
   createRunnerRegistry,
   createShellRunner,
+  createJsonReporter,
+  createJunitReporter,
 } from '@test-orchestrator/core';
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
 import type { Command } from 'commander';
@@ -76,6 +78,8 @@ export function registerCommands(program: Command): void {
     .description('Load a config, discover test cases and execute them')
     .option('-c, --config <path>', 'path to config file')
     .option('-t, --tests <dir>', 'directory holding *.test-case.json files', '.')
+    .option('-r, --reporter <type>', 'also write a file report: json or junit')
+    .option('-o, --out <path>', 'output path for the file reporter')
     .action(async (opts: Record<string, unknown>) => {
       try {
         const configPath = opts['config'] === undefined ? undefined : String(opts['config']);
@@ -102,7 +106,7 @@ export function registerCommands(program: Command): void {
           runners.register(createShellRunner(runner.name));
         }
 
-        const reporter: Reporter = {
+        const consoleReporter: Reporter = {
           kind: 'reporter',
           name: 'cli',
           type: 'cli',
@@ -115,11 +119,32 @@ export function registerCommands(program: Command): void {
           },
         };
 
+        const reporters: Reporter[] = [consoleReporter];
+        const reporterType = opts['reporter'] === undefined ? undefined : String(opts['reporter']);
+        if (reporterType !== undefined) {
+          const outPath = opts['out'] === undefined ? undefined : String(opts['out']);
+          if (outPath === undefined) {
+            logger.error('--out <path> is required when --reporter is set');
+            process.exitCode = 1;
+            return;
+          }
+          const resolvedOut = resolve(process.cwd(), outPath);
+          if (reporterType === 'json') {
+            reporters.push(createJsonReporter(resolvedOut));
+          } else if (reporterType === 'junit') {
+            reporters.push(createJunitReporter(resolvedOut));
+          } else {
+            logger.error(`unknown reporter "${reporterType}" (use json or junit)`);
+            process.exitCode = 1;
+            return;
+          }
+        }
+
         const summary = await executeRun({
           config: config as unknown as RunOptions['config'],
           testCases: testCases as unknown as RunOptions['testCases'],
           runners,
-          reporters: [reporter],
+          reporters,
           logger,
         });
 
