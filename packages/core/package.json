@@ -1,0 +1,49 @@
+{
+  "name": "@test-orchestrator/core",
+  "version": "0.0.1",
+  "description": "Core runtime for test-orchestrator: types, registries, hooks, utils and errors",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.js"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks/index.d.ts",
+      "import": "./dist/hooks/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:ci": "vitest run --reporter=dot --coverage",
+    "check-types": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@test-orchestrator/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0"
+  }
+}

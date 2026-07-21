@@ -1,0 +1,46 @@
+{
+  "name": "@test-orchestrator/schema",
+  "version": "0.0.1",
+  "description": "JSON Schema definitions and AJV validators for test-orchestrator",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/schema.d.ts",
+      "import": "./dist/config/schema.js"
+    },
+    "./test-case": {
+      "types": "./dist/test-case/schema.d.ts",
+      "import": "./dist/test-case/schema.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:ci": "vitest run --reporter=dot --coverage",
+    "check-types": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
+  },
+  "dependencies": {
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0"
+  }
+}
