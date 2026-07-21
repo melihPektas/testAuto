@@ -5,6 +5,7 @@ import {
   executeRun,
   createRunnerRegistry,
   createShellRunner,
+  createN8nRunner,
   createJsonReporter,
   createJunitReporter,
 } from '@test-orchestrator/core';
@@ -103,7 +104,17 @@ export function registerCommands(program: Command): void {
 
         const runners = createRunnerRegistry();
         for (const runner of config.runners) {
-          runners.register(createShellRunner(runner.name));
+          if (runner.type === 'n8n') {
+            const baseUrl = runner.options?.['baseUrl'];
+            if (typeof baseUrl !== 'string') {
+              logger.error(`runner "${runner.name}" (n8n) requires a string options.baseUrl`);
+              process.exitCode = 1;
+              return;
+            }
+            runners.register(createN8nRunner(runner.name, { baseUrl }));
+          } else {
+            runners.register(createShellRunner(runner.name));
+          }
         }
 
         const consoleReporter: Reporter = {
