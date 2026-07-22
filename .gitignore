@@ -3,7 +3,6 @@ dist/
 .turbo/
 coverage/
 *.tsbuildinfo
-pnpm-lock.yaml
 .DS_Store
 *.log
 .vite/
