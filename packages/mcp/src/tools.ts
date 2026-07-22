@@ -1,5 +1,5 @@
-import { readFile, readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   executeRun,
@@ -8,6 +8,7 @@ import {
   createGeneratorRegistry,
   buildRunnerRegistry,
   createTemplateGenerator,
+  ingestProject,
 } from '@test-orchestrator/core';
 import type { GenerateRunOptions, RunOptions, RunSummary, Workspace } from '@test-orchestrator/core';
 import { createBrowserRunner } from '@test-orchestrator/browser';
@@ -73,6 +74,31 @@ export async function testUrl(url: string): Promise<RunSummary> {
     testCases: testCases as unknown as RunOptions['testCases'],
     runners,
   });
+}
+
+export async function ingestProjectTool(dir: string): Promise<{
+  framework: string;
+  command: string;
+  count: number;
+  testFiles: string[];
+  written: string[];
+}> {
+  const result = await ingestProject(dir);
+  const base = resolve(process.cwd(), dir);
+  const written: string[] = [];
+  for (const testCase of result.testCases) {
+    const target = join(base, testCase.path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, testCase.content, 'utf8');
+    written.push(testCase.path);
+  }
+  return {
+    framework: result.framework,
+    command: result.command,
+    count: result.count,
+    testFiles: result.testFiles,
+    written,
+  };
 }
 
 export async function generateTests(

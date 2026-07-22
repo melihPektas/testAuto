@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { generateTests, listTests, runTests, testUrl } from './tools.js';
+import { generateTests, ingestProjectTool, listTests, runTests, testUrl } from './tools.js';
 
 function textResult(value: unknown): { content: { type: 'text'; text: string }[] } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -43,9 +43,16 @@ export function createOrchestratorServer(): McpServer {
 
   server.tool(
     'test_url',
-    'Run a comprehensive UI smoke test against a URL with a real browser (navigate, assert 2xx status, non-empty title, and a rendered body). Returns a pass/fail summary.',
+    'Run a comprehensive UI audit against a URL with a real browser: navigate, assert a 2xx status, then check title, rendered body, console errors, broken images, link count, meta description, and mobile responsiveness. Returns a pass/fail summary with per-check findings.',
     { url: z.string().url() },
     async ({ url }) => textResult(await testUrl(url)),
+  );
+
+  server.tool(
+    'ingest_project',
+    'Evaluate a project directory: detect its test framework (vitest/jest/playwright/mocha), discover existing test files, and ingest them as orchestrator test cases written to <dir>/ingested/. Returns the framework, discovered files, and what was written.',
+    { dir: z.string().default('.') },
+    async ({ dir }) => textResult(await ingestProjectTool(dir)),
   );
 
   return server;
