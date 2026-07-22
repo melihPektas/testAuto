@@ -62,4 +62,24 @@ describe('dashboard server', () => {
     expect(summary.passed).toBe(1);
     expect(summary.status).toBe('pass');
   });
+
+  it('exposes the configured runners via /api/config', async () => {
+    const res = await fetch(
+      `${baseUrl}/api/config?path=${encodeURIComponent(join(dir, 'test-orchestrator.config.json'))}`,
+    );
+    const body = (await res.json()) as { name: string; runners: { name: string; type: string }[] };
+    expect(body.name).toBe('web-suite');
+    expect(body.runners).toEqual([{ name: 'default', type: 'shell' }]);
+  });
+
+  it('streams live run progress and a final summary over SSE', async () => {
+    const res = await fetch(
+      `${baseUrl}/api/run/stream?configPath=${encodeURIComponent(join(dir, 'test-orchestrator.config.json'))}&testsDir=${encodeURIComponent(dir)}`,
+    );
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const text = await res.text();
+    expect(text).toContain('event: progress');
+    expect(text).toContain('"type":"test:end"');
+    expect(text).toContain('event: summary');
+  });
 });

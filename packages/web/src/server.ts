@@ -59,22 +59,31 @@ async function listTests(dir: string): Promise<string[]> {
   return entries.filter((f) => f.endsWith('.test-case.json')).sort();
 }
 
-async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
-  const input = (body ?? {}) as { configPath?: string; testsDir?: string };
-  const configPath = resolve(process.cwd(), input.configPath ?? 'test-orchestrator.config.json');
-  const testsDir = resolve(process.cwd(), input.testsDir ?? '.');
+interface WebConfig {
+  name: string;
+  runners: { name: string; type: string; options?: Record<string, unknown> }[];
+}
 
-  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-    name: string;
-    runners: { name: string; type: string; options?: Record<string, unknown> }[];
+function resolvePaths(input: { configPath?: string; testsDir?: string }): {
+  configPath: string;
+  testsDir: string;
+} {
+  return {
+    configPath: resolve(process.cwd(), input.configPath ?? 'test-orchestrator.config.json'),
+    testsDir: resolve(process.cwd(), input.testsDir ?? '.'),
   };
+}
 
+async function loadInputs(
+  configPath: string,
+  testsDir: string,
+): Promise<{ config: WebConfig; testCases: unknown[]; runners: ReturnType<typeof createRunnerRegistry> }> {
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
   const files = await listTests(testsDir);
   const testCases: unknown[] = [];
   for (const file of files) {
     testCases.push(JSON.parse(await readFile(join(testsDir, file), 'utf8')));
   }
-
   const runners = createRunnerRegistry();
   for (const runner of config.runners) {
     if (runner.type === 'n8n') {
@@ -86,16 +95,60 @@ async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
       runners.register(createShellRunner(runner.name));
     }
   }
+  return { config, testCases, runners };
+}
 
-  const collector: Reporter = { kind: 'reporter', name: 'web', type: 'web' };
+async function handleConfig(res: ServerResponse, configPath: string): Promise<void> {
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
+  sendJson(res, 200, {
+    name: config.name,
+    runners: config.runners.map((r) => ({ name: r.name, type: r.type })),
+  });
+}
 
+async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
+  const { configPath, testsDir } = resolvePaths((body ?? {}) as { configPath?: string; testsDir?: string });
+  const { config, testCases, runners } = await loadInputs(configPath, testsDir);
   const summary = await executeRun({
     config: config as unknown as RunOptions['config'],
     testCases: testCases as unknown as RunOptions['testCases'],
     runners,
-    reporters: [collector],
+    reporters: [{ kind: 'reporter', name: 'web', type: 'web' }],
   });
   sendJson(res, 200, summary);
+}
+
+async function handleRunStream(res: ServerResponse, configPath: string, testsDir: string): Promise<void> {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+  const send = (event: string, data: unknown): void => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  try {
+    const { config, testCases, runners } = await loadInputs(configPath, testsDir);
+    const streamer: Reporter = {
+      kind: 'reporter',
+      name: 'sse',
+      type: 'sse',
+      onEvent: (event) => {
+        send('progress', event);
+      },
+    };
+    const summary = await executeRun({
+      config: config as unknown as RunOptions['config'],
+      testCases: testCases as unknown as RunOptions['testCases'],
+      runners,
+      reporters: [streamer],
+    });
+    send('summary', summary);
+  } catch (err) {
+    send('error', { message: (err as Error).message });
+  } finally {
+    res.end();
+  }
 }
 
 export function createDashboardServer(): ReturnType<typeof createServer> {
@@ -110,6 +163,22 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
         if (req.method === 'GET' && url.pathname === '/api/tests') {
           const dir = resolve(process.cwd(), url.searchParams.get('dir') ?? '.');
           sendJson(res, 200, { dir, files: await listTests(dir) });
+          return;
+        }
+        if (req.method === 'GET' && url.pathname === '/api/config') {
+          const configPath = resolve(
+            process.cwd(),
+            url.searchParams.get('path') ?? 'test-orchestrator.config.json',
+          );
+          await handleConfig(res, configPath);
+          return;
+        }
+        if (req.method === 'GET' && url.pathname === '/api/run/stream') {
+          const { configPath, testsDir } = resolvePaths({
+            configPath: url.searchParams.get('configPath') ?? undefined,
+            testsDir: url.searchParams.get('testsDir') ?? undefined,
+          });
+          await handleRunStream(res, configPath, testsDir);
           return;
         }
         if (req.method === 'POST' && url.pathname === '/api/run') {
