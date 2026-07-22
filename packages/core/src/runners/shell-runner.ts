@@ -18,8 +18,8 @@ export function createShellRunner(name?: string): Runner {
             durationMs: 0,
             error: {
               message: 'no action to run',
-              code: 'ORCH_STEP_FAILED'
-            }
+              code: 'ORCH_STEP_FAILED',
+            },
           });
         }
 
@@ -27,11 +27,11 @@ export function createShellRunner(name?: string): Runner {
         let stdout = '';
         let stderr = '';
 
-        process.stdout.on('data', (data) => {
+        process.stdout.on('data', (data: Buffer) => {
           stdout += data.toString();
         });
 
-        process.stderr.on('data', (data) => {
+        process.stderr.on('data', (data: Buffer) => {
           stderr += data.toString();
         });
 
@@ -42,7 +42,7 @@ export function createShellRunner(name?: string): Runner {
             resolve({
               status: 'pass',
               durationMs,
-              output: stdout
+              output: stdout,
             });
           } else {
             resolve({
@@ -51,8 +51,8 @@ export function createShellRunner(name?: string): Runner {
               output: stdout,
               error: {
                 message: stderr || `exited with code ${String(code)}`,
-                code: 'ORCH_STEP_FAILED'
-              }
+                code: 'ORCH_STEP_FAILED',
+              },
             });
           }
         });
@@ -64,11 +64,11 @@ export function createShellRunner(name?: string): Runner {
             durationMs,
             error: {
               message: err.message,
-              code: 'ORCH_STEP_FAILED'
-            }
+              code: 'ORCH_STEP_FAILED',
+            },
           });
         });
       });
-    }
+    },
   };
 }

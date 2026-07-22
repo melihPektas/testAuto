@@ -117,7 +117,7 @@ export function createHooks<Ctx>(): HooksImpl<Ctx> {
       const results = await Promise.allSettled(snapshot.map(async (h) => h(ctx)));
       for (const result of results) {
         if (result.status === 'rejected') {
-          const cause = result.reason;
+          const cause: unknown = result.reason;
           const message = cause instanceof Error ? cause.message : String(cause);
           throw new HookError('ORCH_HOOK_ERROR', `Hook "${name}" failed: ${message}`, {
             cause,

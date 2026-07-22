@@ -1,5 +1,6 @@
 import { RunnerError, toOrchestratorError } from '../errors/index.js';
 import { noopLogger } from '../utils/logger.js';
+
 import type { RunnerRegistry } from '../registry/registries.js';
 import type {
   Logger,
@@ -8,7 +9,6 @@ import type {
   Runner,
   RunContext,
   StepResult,
-  Step,
   TestCase,
   TestResult,
   TestOrchestratorConfig,

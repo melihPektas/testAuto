@@ -1,15 +1,16 @@
-import Ajv2020 from 'ajv/dist/2020.js';
 import { type ErrorObject } from 'ajv';
+import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 import { configSchema } from './config/schema.js';
 import { testCaseSchema } from './test-case/schema.js';
+
 import type { TestOrchestratorConfig } from './config/types.js';
 import type { TestCase } from './test-case/types.js';
 
 export type SchemaValidationResult<T> =
   | { ok: true; data: T }
-  | { ok: false; errors: ErrorObject<string, Record<string, any>, unknown>[] };
+  | { ok: false; errors: ErrorObject<string, Record<string, unknown>, unknown>[] };
 
 let ajvInstance: Ajv2020 | undefined;
 
@@ -23,8 +24,8 @@ function getAjv(): Ajv2020 {
       coerceTypes: false,
     });
     addFormats(ajvInstance);
-    ajvInstance.addSchema(configSchema as Record<string, unknown>, 'config');
-    ajvInstance.addSchema(testCaseSchema as Record<string, unknown>, 'test-case');
+    ajvInstance.addSchema(configSchema, 'config');
+    ajvInstance.addSchema(testCaseSchema, 'test-case');
   }
   return ajvInstance;
 }

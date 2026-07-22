@@ -1,6 +1,6 @@
+import type { Logger } from '../types.js';
 import type { LogLevel } from '@test-orchestrator/schema';
 
-import type { Logger } from '../types.js';
 
 export interface LoggerOptions {
   readonly level?: LogLevel;

@@ -1,11 +1,12 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDashboardServer } from '../src/server.js';
+
+import type { AddressInfo } from 'node:net';
 
 let server: ReturnType<typeof createDashboardServer>;
 let baseUrl: string;

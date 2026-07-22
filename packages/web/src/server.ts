@@ -107,7 +107,7 @@ async function handleConfig(res: ServerResponse, configPath: string): Promise<vo
 }
 
 async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
-  const { configPath, testsDir } = resolvePaths((body ?? {}) as { configPath?: string; testsDir?: string });
+  const { configPath, testsDir } = resolvePaths((body ?? {}));
   const { config, testCases, runners } = await loadInputs(configPath, testsDir);
   const summary = await executeRun({
     config: config as unknown as RunOptions['config'],

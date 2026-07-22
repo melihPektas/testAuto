@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { Command } from 'commander';
-import { registerCommands } from "../src/commands/index.js";
+import { describe, expect, it } from 'vitest';
+
+import { registerCommands } from '../src/commands/index.js';
 
 describe('CLI Commands Registration', () => {
   it('should register the correct commands', () => {

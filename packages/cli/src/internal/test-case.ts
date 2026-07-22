@@ -54,19 +54,19 @@ export function validateTestCase(input: unknown): ValidationResult {
     return { valid: false, errors: ['test case must be an object'] };
   }
   const record = input as Record<string, unknown>;
-  if (typeof record["id"] !== 'string' || record["id"].length === 0) {
+  if (typeof record['id'] !== 'string' || record['id'].length === 0) {
     errors.push('id must be a non-empty string');
   }
-  if (record["version"] !== '1.0') {
+  if (record['version'] !== '1.0') {
     errors.push('version must equal "1.0"');
   }
-  if (typeof record["name"] !== 'string' || record["name"].length === 0) {
+  if (typeof record['name'] !== 'string' || record['name'].length === 0) {
     errors.push('name must be a non-empty string');
   }
-  if (!Array.isArray(record["steps"]) || record["steps"].length === 0) {
+  if (!Array.isArray(record['steps']) || record['steps'].length === 0) {
     errors.push('steps must be a non-empty array');
   } else {
-    const steps = record["steps"] as unknown[];
+    const steps = record['steps'] as unknown[];
     steps.forEach((step, idx) => {
       if (step === null || typeof step !== 'object') {
         errors.push(`steps[${idx}] must be an object`);
@@ -74,10 +74,10 @@ export function validateTestCase(input: unknown): ValidationResult {
       }
       const s = step as Record<string, unknown>;
       // `id` is optional per the JSON schema; only validate it when present.
-      if (s["id"] !== undefined && (typeof s["id"] !== 'string' || s["id"].length === 0)) {
+      if (s['id'] !== undefined && (typeof s['id'] !== 'string' || s['id'].length === 0)) {
         errors.push(`steps[${idx}].id must be a non-empty string when provided`);
       }
-      if (typeof s["action"] !== 'string' || s["action"].length === 0) {
+      if (typeof s['action'] !== 'string' || s['action'].length === 0) {
         errors.push(`steps[${idx}].action must be a non-empty string`);
       }
     });

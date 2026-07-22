@@ -43,12 +43,12 @@ export function createJunitReporter(outputPath: string): Reporter {
         const failures = results.filter((r) => r.status === 'fail').length;
         const cases = results.map(renderTestCase).join('\n');
         const xml =
-          `<?xml version="1.0" encoding="UTF-8"?>\n` +
-          `<testsuites>\n` +
+          '<?xml version="1.0" encoding="UTF-8"?>\n' +
+          '<testsuites>\n' +
           `  <testsuite name="orchestrator" tests="${results.length}" failures="${failures}">\n` +
           `${cases}${cases ? '\n' : ''}` +
-          `  </testsuite>\n` +
-          `</testsuites>\n`;
+          '  </testsuite>\n' +
+          '</testsuites>\n';
         await writeFile(outputPath, xml, 'utf8');
       }
     },

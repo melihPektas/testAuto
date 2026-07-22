@@ -12,12 +12,14 @@ import {
   createJsonReporter,
   createJunitReporter,
 } from '@test-orchestrator/core';
+
+import { resolveConfig } from '../internal/config-loader.js';
+import { createLogger } from '../internal/logger.js';
+import { assertValidTestCase } from '../internal/test-case.js';
+
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { Command } from 'commander';
 
-import { resolveConfig } from '../internal/config-loader.js';
-import { assertValidTestCase } from '../internal/test-case.js';
-import { createLogger } from '../internal/logger.js';
 
 const logger = createLogger();
 
@@ -160,7 +162,7 @@ export function registerCommands(program: Command): void {
         }
 
         const summary = await executeRun({
-          config: config as unknown as RunOptions['config'],
+          config: config,
           testCases: testCases as unknown as RunOptions['testCases'],
           runners,
           reporters,

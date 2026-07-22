@@ -1,5 +1,6 @@
-import type { Generator, Plugin, Reporter, Runner } from '../types.js';
 import { Registry } from './registry.js';
+
+import type { Generator, Plugin, Reporter, Runner } from '../types.js';
 
 /**
  * Registry specialised for {@link Runner} instances.

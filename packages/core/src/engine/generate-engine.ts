@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { noopLogger } from '../utils/logger.js';
+
 import type { GeneratorRegistry } from '../registry/registries.js';
 import type { GenerateContext, Logger, TestOrchestratorConfig, Workspace } from '../types.js';
 
@@ -32,7 +33,7 @@ export async function executeGenerators(opts: GenerateRunOptions): Promise<Gener
     logger,
     signal,
     workspace: opts.workspace,
-    options
+    options,
   };
 
   const files: string[] = [];

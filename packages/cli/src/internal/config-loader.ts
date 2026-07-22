@@ -1,9 +1,10 @@
-import { isAbsolute, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
+
+import { assertValidConfig } from './config-validator.js';
+import { OrchestratorError } from './errors.js';
 
 import type { TestOrchestratorConfig } from './config-types.js';
-import { OrchestratorError } from './errors.js';
-import { assertValidConfig } from './config-validator.js';
 
 export function resolveConfigPath(explicitPath: string | undefined, cwd?: string): string {
   if (explicitPath !== undefined) {
@@ -32,7 +33,7 @@ export async function loadConfig(path: string): Promise<TestOrchestratorConfig> 
     );
   }
   assertValidConfig(parsed);
-  return parsed as TestOrchestratorConfig;
+  return parsed;
 }
 
 export async function resolveConfig(

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createJsonReporter } from '../src/reporters/json-reporter.js';
 import { createJunitReporter } from '../src/reporters/junit-reporter.js';
+
 import type { OrchestratorEvent, TestOrchestratorConfig, TestResult } from '../src/types.js';
 
 const config: TestOrchestratorConfig = {

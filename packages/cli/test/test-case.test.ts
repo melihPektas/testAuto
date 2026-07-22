@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { OrchestratorError } from '../src/internal/errors.js';
 import {
   validateTestCase,
   assertValidTestCase,
 } from '../src/internal/test-case.js';
-import { OrchestratorError } from '../src/internal/errors.js';
 
 const validCase = {
   id: 'tc-1',

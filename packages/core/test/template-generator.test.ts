@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createTemplateGenerator } from '../src/generators/template-generator.js';
+
 import type { GenerateContext } from '../src/types.js';
 
 function ctxWith(options?: Record<string, unknown>): GenerateContext {

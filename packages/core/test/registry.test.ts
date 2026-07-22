@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { Registry } from '../src/registry/registry.js';
 import { RegistryError } from '../src/errors/errors.js';
 import { createRunnerRegistry } from '../src/registry/registries.js';
+import { Registry } from '../src/registry/registry.js';
 
 interface Item {
   readonly name: string;

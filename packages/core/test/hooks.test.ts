@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHooks } from '../src/hooks/hooks.js';
 import { HookError } from '../src/errors/errors.js';
+import { createHooks } from '../src/hooks/hooks.js';
 
 describe('createHooks', () => {
   it('invokes registered handlers in order on emit', async () => {

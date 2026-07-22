@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { executeGenerators } from '../src/engine/generate-engine.js';
-import { createGeneratorRegistry } from '../src/registry/registries.js';
 import { createTemplateGenerator } from '../src/generators/template-generator.js';
+import { createGeneratorRegistry } from '../src/registry/registries.js';
+
 import type { TestOrchestratorConfig, Workspace } from '../src/types.js';
 
 const config: TestOrchestratorConfig = {
