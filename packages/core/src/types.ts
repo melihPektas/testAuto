@@ -38,11 +38,20 @@ export interface Runner {
   dispose?(ctx: RunContext): Promise<void> | void;
 }
 
+export interface GenerateContext {
+  readonly config: TestOrchestratorConfig;
+  readonly env: Record<string, string>;
+  readonly logger: Logger;
+  readonly signal: AbortSignal;
+  readonly workspace: Workspace;
+  readonly options?: Record<string, unknown>;
+}
+
 export interface Generator {
   readonly kind: 'generator';
   readonly name: string;
   readonly type: string;
-  generate(ctx: RunContext): Promise<GeneratedSuite>;
+  generate(ctx: GenerateContext): Promise<GeneratedSuite>;
 }
 
 export interface Reporter {
