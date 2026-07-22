@@ -36,6 +36,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
   let browser: Browser | undefined;
   let page: Page | undefined;
   let lastResponse: Response | null = null;
+  const consoleErrors: string[] = [];
 
   async function act(ctx: RunContext): Promise<{ output?: string }> {
     if (page === undefined) {
@@ -92,6 +93,112 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         await page.click(selector);
         return { output: `clicked "${selector}"` };
       }
+      case 'expectNoConsoleErrors': {
+        if (consoleErrors.length > 0) {
+          throw new Error(
+            `${String(consoleErrors.length)} console error(s): ${consoleErrors.slice(0, 3).join(' | ')}`,
+          );
+        }
+        return { output: 'no console errors' };
+      }
+      case 'expectNoBrokenImages': {
+        const broken = await page.$$eval('img', (imgs) =>
+          imgs.filter((img) => img.complete && img.naturalWidth === 0).length,
+        );
+        if (broken > 0) {
+          throw new Error(`${String(broken)} broken image(s)`);
+        }
+        const total = await page.$$eval('img', (imgs) => imgs.length);
+        return { output: `${String(total)} image(s), none broken` };
+      }
+      case 'expectMinLinks': {
+        const min = Number(value ?? 1);
+        const count = await page.$$eval('a[href]', (as) => as.length);
+        if (count < min) {
+          throw new Error(`expected at least ${String(min)} links but found ${String(count)}`);
+        }
+        return { output: `${String(count)} link(s)` };
+      }
+      case 'expectMeta': {
+        const metaEl = await page.$('meta[name="description"]');
+        const description = metaEl === null ? null : await metaEl.getAttribute('content');
+        if (description === null || description.trim().length === 0) {
+          throw new Error('missing or empty <meta name="description">');
+        }
+        return { output: `meta description present (${String(description.length)} chars)` };
+      }
+      case 'expectResponsive': {
+        await page.setViewportSize({ width: 375, height: 812 });
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        await page.setViewportSize({ width: 1280, height: 800 });
+        if (overflow > 4) {
+          throw new Error(`horizontal overflow of ${String(overflow)}px at 375px width`);
+        }
+        return { output: 'no horizontal overflow at mobile width' };
+      }
+      case 'audit': {
+        const checks: { name: string; ok: boolean; detail: string }[] = [];
+
+        const title = await page.title();
+        checks.push({ name: 'title', ok: title.length > 0, detail: title.length > 0 ? title : '(empty)' });
+
+        const hasBody = (await page.$('body')) !== null;
+        checks.push({ name: 'body', ok: hasBody, detail: hasBody ? 'rendered' : 'missing' });
+
+        checks.push({
+          name: 'no-console-errors',
+          ok: consoleErrors.length === 0,
+          detail:
+            consoleErrors.length === 0
+              ? 'clean'
+              : `${String(consoleErrors.length)}: ${consoleErrors.slice(0, 2).join(' | ')}`,
+        });
+
+        const totalImg = await page.$$eval('img', (imgs) => imgs.length);
+        const brokenImg = await page.$$eval(
+          'img',
+          (imgs) => imgs.filter((img) => img.complete && img.naturalWidth === 0).length,
+        );
+        checks.push({
+          name: 'images',
+          ok: brokenImg === 0,
+          detail: `${String(totalImg)} total, ${String(brokenImg)} broken`,
+        });
+
+        const links = await page.$$eval('a[href]', (as) => as.length);
+        checks.push({ name: 'links', ok: links > 0, detail: `${String(links)} links` });
+
+        const metaEl = await page.$('meta[name="description"]');
+        const description = metaEl === null ? null : await metaEl.getAttribute('content');
+        const hasDesc = description !== null && description.trim().length > 0;
+        checks.push({
+          name: 'meta-description',
+          ok: hasDesc,
+          detail: hasDesc ? `${String(description.length)} chars` : 'missing',
+        });
+
+        await page.setViewportSize({ width: 375, height: 812 });
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        await page.setViewportSize({ width: 1280, height: 800 });
+        checks.push({
+          name: 'responsive',
+          ok: overflow <= 4,
+          detail: overflow <= 4 ? 'no overflow @375px' : `${String(overflow)}px overflow @375px`,
+        });
+
+        const report = checks
+          .map((c) => `${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`)
+          .join('\n');
+        const failed = checks.filter((c) => !c.ok);
+        if (failed.length > 0) {
+          throw new Error(`${String(failed.length)} audit check(s) failed:\n${report}`);
+        }
+        return { output: `audit passed (${String(checks.length)} checks):\n${report}` };
+      }
       default:
         throw new Error(`unknown browser action "${String(action)}"`);
     }
@@ -105,6 +212,15 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       browser = await chromium.launch({ headless: options.headed !== true });
       page = await browser.newPage();
       lastResponse = null;
+      consoleErrors.length = 0;
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') {
+          consoleErrors.push(msg.text());
+        }
+      });
+      page.on('pageerror', (err) => {
+        consoleErrors.push(err.message);
+      });
     },
     runStep: async (ctx: RunContext): Promise<StepResult> => {
       const start = Date.now();

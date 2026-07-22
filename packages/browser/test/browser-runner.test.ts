@@ -21,7 +21,8 @@ beforeAll(async () => {
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(
-      '<html><head><title>Test Page</title></head><body><h1>Hello</h1><p>welcome friend</p></body></html>',
+      '<html><head><title>Test Page</title><meta name="description" content="a friendly test page"></head>' +
+        '<body><h1>Hello</h1><p>welcome friend</p><a href="/other">more</a></body></html>',
     );
   });
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -73,6 +74,26 @@ describe('createBrowserRunner', () => {
       { id: '2', action: 'expectSelector', target: '.does-not-exist' },
     ]);
     expect(summary.status).toBe('fail');
+  });
+
+  it('runs a comprehensive audit that passes on a healthy page', async () => {
+    const summary = await run([
+      { id: '1', action: 'goto', value: baseUrl },
+      { id: '2', action: 'audit' },
+    ]);
+    expect(summary.status).toBe('pass');
+    const output = summary.results[0]?.steps[1]?.output ?? '';
+    expect(output).toContain('meta-description');
+    expect(output).toContain('responsive');
+  });
+
+  it('audit reports failures (no meta description → 404 page)', async () => {
+    const summary = await run([
+      { id: '1', action: 'goto', value: `${baseUrl}/missing` },
+      { id: '2', action: 'audit' },
+    ]);
+    expect(summary.status).toBe('fail');
+    expect(summary.results[0]?.error?.message).toContain('meta-description');
   });
 });
 

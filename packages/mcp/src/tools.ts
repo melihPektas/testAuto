@@ -59,8 +59,7 @@ export async function testUrl(url: string): Promise<RunSummary> {
       steps: [
         { id: 'goto', action: 'goto', value: url },
         { id: 'status', action: 'expectStatus', value: 200 },
-        { id: 'title', action: 'expectTitle' },
-        { id: 'body', action: 'expectSelector', target: 'body' },
+        { id: 'audit', action: 'audit' },
       ],
     },
   ];
