@@ -35,10 +35,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Lint is not yet clean across the monorepo (typed-lint config + formatting
-      # debt). Kept visible but non-blocking until a dedicated lint-cleanup pass.
-      - name: Lint (non-blocking)
-        continue-on-error: true
+      - name: Lint
         run: pnpm lint
 
   e2e-smoke:
