@@ -74,7 +74,7 @@ export function registerCommands(program: Command): void {
           logger,
           options: {
             names: names.length > 0 ? names : ['sample'],
-            outputDir: String(opts['dir'] ?? '.'),
+            outputDir: typeof opts['dir'] === 'string' ? opts['dir'] : '.',
           },
         };
         const summary = await executeGenerators(options);
@@ -93,11 +93,14 @@ export function registerCommands(program: Command): void {
     .option('-o, --out <path>', 'output path for the file reporter')
     .action(async (opts: Record<string, unknown>) => {
       try {
-        const configPath = opts['config'] === undefined ? undefined : String(opts['config']);
+        const configPath = typeof opts['config'] === 'string' ? opts['config'] : undefined;
         const { path, config } = await resolveConfig(configPath);
         logger.info(`loaded "${config.name}" from ${path}`);
 
-        const testsDir = resolve(process.cwd(), String(opts['tests'] ?? '.'));
+        const testsDir = resolve(
+          process.cwd(),
+          typeof opts['tests'] === 'string' ? opts['tests'] : '.',
+        );
         const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json'));
         if (files.length === 0) {
           logger.warn(`no *.test-case.json files found in ${testsDir}`);
@@ -141,9 +144,9 @@ export function registerCommands(program: Command): void {
         };
 
         const reporters: Reporter[] = [consoleReporter];
-        const reporterType = opts['reporter'] === undefined ? undefined : String(opts['reporter']);
+        const reporterType = typeof opts['reporter'] === 'string' ? opts['reporter'] : undefined;
         if (reporterType !== undefined) {
-          const outPath = opts['out'] === undefined ? undefined : String(opts['out']);
+          const outPath = typeof opts['out'] === 'string' ? opts['out'] : undefined;
           if (outPath === undefined) {
             logger.error('--out <path> is required when --reporter is set');
             process.exitCode = 1;
