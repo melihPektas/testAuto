@@ -1,0 +1,35 @@
+{
+  "name": "@test-orchestrator/web",
+  "version": "0.0.1",
+  "description": "Web dashboard for test-orchestrator: browse test cases, run them, view results",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "public"],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:ci": "vitest run --reporter=dot --coverage",
+    "check-types": "tsc --noEmit",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@test-orchestrator/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0"
+  }
+}
