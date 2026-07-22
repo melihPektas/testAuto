@@ -3,13 +3,16 @@ import { join, resolve } from 'node:path';
 
 import {
   executeRun,
+  executeGenerators,
   createRunnerRegistry,
+  createGeneratorRegistry,
   createShellRunner,
   createN8nRunner,
+  createTemplateGenerator,
   createJsonReporter,
   createJunitReporter,
 } from '@test-orchestrator/core';
-import type { Reporter, RunOptions } from '@test-orchestrator/core';
+import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { Command } from 'commander';
 
 import { resolveConfig } from '../internal/config-loader.js';
@@ -47,28 +50,33 @@ export function registerCommands(program: Command): void {
 
   program
     .command('generate')
-    .description('Generate a test-case template JSON file')
-    .requiredOption('-o, --output <path>', 'output file path')
-    .option('-n, --name <name>', 'test case name', 'sample')
-    .action(async (opts: Record<string, unknown>) => {
-      const name = String(opts['name'] ?? 'sample');
-      const output = resolve(process.cwd(), String(opts['output']));
-      const template = {
-        id: name,
-        version: '1.0',
-        name,
-        description: `Generated test case: ${name}`,
-        tags: ['generated'],
-        runner: 'default',
-        steps: [
-          { id: 'step-1', action: `echo "running ${name}"`, description: 'first step' },
-        ],
-        timeout: 30000,
-        retry: 0,
-      };
+    .description('Generate test-case files through the generator engine')
+    .argument('[names...]', 'test case names to generate', ['sample'])
+    .option('-d, --dir <dir>', 'output directory', '.')
+    .action(async (names: string[], opts: Record<string, unknown>) => {
       try {
-        await writeFile(output, `${JSON.stringify(template, null, 2)}\n`, 'utf8');
-        logger.info(`generated ${output}`);
+        const cwd = process.cwd();
+        const workspace: Workspace = {
+          root: cwd,
+          artifacts: resolve(cwd, '.artifacts'),
+          temp: resolve(cwd, '.tmp'),
+          resolve: (p: string) => resolve(cwd, p),
+        };
+        const generators = createGeneratorRegistry();
+        generators.register(createTemplateGenerator());
+
+        const options: GenerateRunOptions = {
+          config: { version: '1.0', name: 'cli-generate', runners: [] },
+          generators,
+          workspace,
+          logger,
+          options: {
+            names: names.length > 0 ? names : ['sample'],
+            outputDir: String(opts['dir'] ?? '.'),
+          },
+        };
+        const summary = await executeGenerators(options);
+        logger.info(`generated ${summary.count} file(s)`);
       } catch (err) {
         logger.error(`failed to generate: ${(err as Error).message}`);
       }
