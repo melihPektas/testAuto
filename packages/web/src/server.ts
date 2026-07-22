@@ -3,12 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  executeRun,
-  createRunnerRegistry,
-  createShellRunner,
-  createN8nRunner,
-} from '@test-orchestrator/core';
+import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
 
@@ -77,24 +72,14 @@ function resolvePaths(input: { configPath?: string; testsDir?: string }): {
 async function loadInputs(
   configPath: string,
   testsDir: string,
-): Promise<{ config: WebConfig; testCases: unknown[]; runners: ReturnType<typeof createRunnerRegistry> }> {
+): Promise<{ config: WebConfig; testCases: unknown[]; runners: ReturnType<typeof buildRunnerRegistry> }> {
   const config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
   const files = await listTests(testsDir);
   const testCases: unknown[] = [];
   for (const file of files) {
     testCases.push(JSON.parse(await readFile(join(testsDir, file), 'utf8')));
   }
-  const runners = createRunnerRegistry();
-  for (const runner of config.runners) {
-    if (runner.type === 'n8n') {
-      const baseUrl = runner.options?.['baseUrl'];
-      if (typeof baseUrl === 'string') {
-        runners.register(createN8nRunner(runner.name, { baseUrl }));
-      }
-    } else {
-      runners.register(createShellRunner(runner.name));
-    }
-  }
+  const runners = buildRunnerRegistry(config.runners);
   return { config, testCases, runners };
 }
 

@@ -6,8 +6,7 @@ import {
   executeGenerators,
   createRunnerRegistry,
   createGeneratorRegistry,
-  createShellRunner,
-  createN8nRunner,
+  buildRunnerRegistry,
   createTemplateGenerator,
 } from '@test-orchestrator/core';
 import type { GenerateRunOptions, RunOptions, RunSummary, Workspace } from '@test-orchestrator/core';
@@ -38,17 +37,7 @@ export async function runTests(
     testCases.push(JSON.parse(await readFile(join(resolvedTests, file), 'utf8')));
   }
 
-  const runners = createRunnerRegistry();
-  for (const runner of config.runners) {
-    if (runner.type === 'n8n') {
-      const baseUrl = runner.options?.['baseUrl'];
-      if (typeof baseUrl === 'string') {
-        runners.register(createN8nRunner(runner.name, { baseUrl }));
-      }
-    } else {
-      runners.register(createShellRunner(runner.name));
-    }
-  }
+  const runners = buildRunnerRegistry(config.runners);
 
   return executeRun({
     config: config as unknown as RunOptions['config'],

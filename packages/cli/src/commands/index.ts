@@ -4,10 +4,8 @@ import { join, resolve } from 'node:path';
 import {
   executeRun,
   executeGenerators,
-  createRunnerRegistry,
+  buildRunnerRegistry,
   createGeneratorRegistry,
-  createShellRunner,
-  createN8nRunner,
   createTemplateGenerator,
   createJsonReporter,
   createJunitReporter,
@@ -115,20 +113,7 @@ export function registerCommands(program: Command): void {
         }
         logger.info(`discovered ${testCases.length} test case(s) in ${testsDir}`);
 
-        const runners = createRunnerRegistry();
-        for (const runner of config.runners) {
-          if (runner.type === 'n8n') {
-            const baseUrl = runner.options?.['baseUrl'];
-            if (typeof baseUrl !== 'string') {
-              logger.error(`runner "${runner.name}" (n8n) requires a string options.baseUrl`);
-              process.exitCode = 1;
-              return;
-            }
-            runners.register(createN8nRunner(runner.name, { baseUrl }));
-          } else {
-            runners.register(createShellRunner(runner.name));
-          }
-        }
+        const runners = buildRunnerRegistry(config.runners);
 
         const consoleReporter: Reporter = {
           kind: 'reporter',
