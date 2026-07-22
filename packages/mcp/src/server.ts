@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { generateTests, listTests, runTests } from './tools.js';
+import { generateTests, listTests, runTests, testUrl } from './tools.js';
 
 function textResult(value: unknown): { content: { type: 'text'; text: string }[] } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -39,6 +39,13 @@ export function createOrchestratorServer(): McpServer {
     'Generate schema-compliant test-case template files for the given names.',
     { names: z.array(z.string()).default(['sample']), dir: z.string().default('.') },
     async ({ names, dir }) => textResult(await generateTests(names, dir)),
+  );
+
+  server.tool(
+    'test_url',
+    'Run a comprehensive UI smoke test against a URL with a real browser (navigate, assert 2xx status, non-empty title, and a rendered body). Returns a pass/fail summary.',
+    { url: z.string().url() },
+    async ({ url }) => textResult(await testUrl(url)),
   );
 
   return server;

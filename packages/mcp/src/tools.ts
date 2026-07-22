@@ -11,6 +11,7 @@ import {
   createTemplateGenerator,
 } from '@test-orchestrator/core';
 import type { GenerateRunOptions, RunOptions, RunSummary, Workspace } from '@test-orchestrator/core';
+import { createBrowserRunner } from '@test-orchestrator/browser';
 
 interface WebConfig {
   name: string;
@@ -51,6 +52,36 @@ export async function runTests(
 
   return executeRun({
     config: config as unknown as RunOptions['config'],
+    testCases: testCases as unknown as RunOptions['testCases'],
+    runners,
+  });
+}
+
+export async function testUrl(url: string): Promise<RunSummary> {
+  const runners = createRunnerRegistry();
+  runners.register(createBrowserRunner('browser'));
+
+  const testCases = [
+    {
+      id: 'ui-smoke',
+      version: '1.0',
+      name: `UI smoke: ${url}`,
+      runner: 'browser',
+      steps: [
+        { id: 'goto', action: 'goto', value: url },
+        { id: 'status', action: 'expectStatus', value: 200 },
+        { id: 'title', action: 'expectTitle' },
+        { id: 'body', action: 'expectSelector', target: 'body' },
+      ],
+    },
+  ];
+
+  return executeRun({
+    config: {
+      version: '1.0',
+      name: 'ui-test',
+      runners: [{ name: 'browser', type: 'browser' }],
+    } as unknown as RunOptions['config'],
     testCases: testCases as unknown as RunOptions['testCases'],
     runners,
   });
