@@ -1,7 +1,12 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { browserRunnerFactory, createBrowserRunner } from '@test-orchestrator/browser';
+import {
+  browserRunnerFactory,
+  createBrowserRunner,
+  exploreSite,
+  generateTestsFromExploration,
+} from '@test-orchestrator/browser';
 import {
   executeRun,
   executeGenerators,
@@ -98,6 +103,43 @@ export async function ingestProjectTool(dir: string): Promise<{
     command: result.command,
     count: result.count,
     testFiles: result.testFiles,
+    written,
+  };
+}
+
+export async function exploreSiteTool(
+  url: string,
+  maxPages: number,
+  dir: string,
+): Promise<{
+    origin: string;
+    pagesVisited: number;
+    pages: { url: string; title: string; links: number; forms: number }[];
+    formsFound: number;
+    generated: number;
+    written: string[];
+  }> {
+  const map = await exploreSite(url, { maxPages });
+  const cases = generateTestsFromExploration(map);
+  const base = resolve(process.cwd(), dir);
+  const written: string[] = [];
+  for (const testCase of cases) {
+    const target = join(base, testCase.path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, testCase.content, 'utf8');
+    written.push(testCase.path);
+  }
+  return {
+    origin: map.origin,
+    pagesVisited: map.pages.length,
+    pages: map.pages.map((p) => ({
+      url: p.url,
+      title: p.title,
+      links: p.links.length,
+      forms: p.forms.length,
+    })),
+    formsFound: map.pages.reduce((sum, p) => sum + p.forms.length, 0),
+    generated: cases.length,
     written,
   };
 }

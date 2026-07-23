@@ -2,7 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { generateTests, ingestProjectTool, listTests, runTests, testUrl } from './tools.js';
+import {
+  exploreSiteTool,
+  generateTests,
+  ingestProjectTool,
+  listTests,
+  runTests,
+  testUrl,
+} from './tools.js';
 
 function textResult(value: unknown): { content: { type: 'text'; text: string }[] } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -46,6 +53,13 @@ export function createOrchestratorServer(): McpServer {
     'Run a comprehensive UI audit against a URL with a real browser: navigate, assert a 2xx status, then check title, rendered body, console errors, broken images, link count, meta description, and mobile responsiveness. Returns a pass/fail summary with per-check findings.',
     { url: z.string().url() },
     async ({ url }) => textResult(await testUrl(url)),
+  );
+
+  server.tool(
+    'explore_site',
+    'Explore a website with a real browser and AUTHOR test cases from what is found: crawls same-origin pages, records links, headings and every form with its fields, then writes an orchestrator test case per page (UI audit), per form (fill-and-submit flow) and a navigation check into <dir>/explored/. This is how the agent writes tests for an app it has never seen.',
+    { url: z.string().url(), maxPages: z.number().int().min(1).max(20).default(5), dir: z.string().default('.') },
+    async ({ url, maxPages, dir }) => textResult(await exploreSiteTool(url, maxPages, dir)),
   );
 
   server.tool(

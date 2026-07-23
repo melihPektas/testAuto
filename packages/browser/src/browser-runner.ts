@@ -104,6 +104,35 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         await page.click(selector);
         return { output: `clicked "${selector}"` };
       }
+      case 'fill': {
+        const selector = String(target ?? '');
+        const input = text(value);
+        await page.fill(selector, input);
+        return { output: `filled "${selector}" with "${input}"` };
+      }
+      case 'select': {
+        const selector = String(target ?? '');
+        const option = text(value);
+        const chosen = await page.selectOption(selector, option);
+        return { output: `selected ${JSON.stringify(chosen)} in "${selector}"` };
+      }
+      case 'check': {
+        const selector = String(target ?? '');
+        await page.check(selector);
+        return { output: `checked "${selector}"` };
+      }
+      case 'press': {
+        const selector = String(target ?? '');
+        const key = text(value) === '' ? 'Enter' : text(value);
+        await page.press(selector, key);
+        return { output: `pressed ${key} on "${selector}"` };
+      }
+      case 'waitFor': {
+        const selector = String(target ?? '');
+        const timeout = value === undefined ? 5000 : Number(value);
+        await page.waitForSelector(selector, { timeout });
+        return { output: `"${selector}" appeared` };
+      }
       case 'expectNoConsoleErrors': {
         if (consoleErrors.length > 0) {
           throw new Error(
