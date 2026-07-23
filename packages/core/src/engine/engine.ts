@@ -361,6 +361,14 @@ export async function executeRun(options: RunOptions): Promise<RunSummary> {
     // reuses the same browser for all of them.
     const laneRunners =
       options.createRunners === undefined ? runners : await options.createRunners();
+    try {
+      await consume(laneRunners);
+    } finally {
+      await shutdown(laneRunners);
+    }
+  };
+
+  const consume = async (laneRunners: RunnerRegistry): Promise<void> => {
     for (;;) {
       const index = cursor;
       cursor += 1;
@@ -381,6 +389,20 @@ export async function executeRun(options: RunOptions): Promise<RunSummary> {
       // which lane finished first.
       results[index] = result;
       await emitSerial({ type: 'test:end', result });
+    }
+  };
+
+  /** Release whatever a lane's runners kept alive across their tests. */
+  const shutdown = async (registry: RunnerRegistry): Promise<void> => {
+    for (const runner of registry.list()) {
+      if (runner.shutdown === undefined) {
+        continue;
+      }
+      try {
+        await runner.shutdown();
+      } catch {
+        // A teardown failure must not lose a run's results.
+      }
     }
   };
 

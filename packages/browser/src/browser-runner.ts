@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page, type Response } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 
 import { captureEvidence } from './evidence.js';
 import { endpointOf, isApiCall, recordNetwork, summariseNetwork } from './network.js';
@@ -49,6 +49,7 @@ function resolveUrl(value: string, baseUrl: string | undefined): string {
  */
 export function createBrowserRunner(name = 'browser', options: BrowserRunnerOptions = {}): Runner {
   let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
   let page: Page | undefined;
   let lastResponse: Response | null = null;
   let network: NetworkRecorder | undefined;
@@ -378,8 +379,12 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
     name,
     type: 'browser',
     init: async (): Promise<void> => {
-      browser = await chromium.launch({ headless: options.headed !== true });
-      page = await browser.newPage();
+      // The browser process is reused across the tests this runner instance
+      // handles; isolation comes from a fresh context per test, which is what
+      // actually carries cookies, storage and cache.
+      browser ??= await chromium.launch({ headless: options.headed !== true });
+      context = await browser.newContext();
+      page = await context.newPage();
       lastResponse = null;
       consoleErrors.length = 0;
       page.on('console', (msg) => {
@@ -421,9 +426,13 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
     captureFailure: (ctx: RunContext): Promise<Record<string, unknown> | undefined> =>
       evidenceFor(ctx),
     dispose: async (): Promise<void> => {
+      await context?.close();
+      context = undefined;
+      page = undefined;
+    },
+    shutdown: async (): Promise<void> => {
       await browser?.close();
       browser = undefined;
-      page = undefined;
     },
   };
 }

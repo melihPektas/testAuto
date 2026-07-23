@@ -290,3 +290,69 @@ describe('evidence on an engine-level failure', () => {
     expect(summary.results[0]?.steps[0]?.error?.message).toContain('timed out');
   });
 });
+
+describe('lane teardown', () => {
+  const countingRunner = (counts: {
+    init: number;
+    dispose: number;
+    shutdown: number;
+  }): RunnerRegistry => {
+    const r = createRunnerRegistry();
+    r.register({
+      name: 'slow',
+      init: () => {
+        counts.init += 1;
+      },
+      runStep: () => Promise.resolve({ status: 'pass', durationMs: 0 } as StepResult),
+      dispose: () => {
+        counts.dispose += 1;
+      },
+      shutdown: () => {
+        counts.shutdown += 1;
+      },
+    });
+    return r;
+  };
+
+  it('shuts a runner down once per lane, not once per test', async () => {
+    const counts = { init: 0, dispose: 0, shutdown: 0 };
+    await executeRun({
+      config,
+      testCases: testCases(12),
+      runners: countingRunner(counts),
+      concurrency: 3,
+      createRunners: () => countingRunner(counts),
+    });
+    // per test: init and dispose. per lane: one shutdown. The registry passed
+    // in is never used once createRunners is supplied, so it is never torn
+    // down either — the engine shuts down what it actually ran with.
+    expect(counts.init).toBe(12);
+    expect(counts.dispose).toBe(12);
+    expect(counts.shutdown).toBe(3);
+  });
+
+  it('shuts down even when a test throws', async () => {
+    const counts = { init: 0, dispose: 0, shutdown: 0 };
+    const registry = createRunnerRegistry();
+    registry.register({
+      name: 'slow',
+      runStep: () => Promise.reject(new Error('boom')),
+      shutdown: () => {
+        counts.shutdown += 1;
+      },
+    });
+    await executeRun({ config, testCases: testCases(2), runners: registry });
+    expect(counts.shutdown).toBe(1);
+  });
+
+  it('does not lose results when teardown itself fails', async () => {
+    const registry = createRunnerRegistry();
+    registry.register({
+      name: 'slow',
+      runStep: () => Promise.resolve({ status: 'pass', durationMs: 0 } as StepResult),
+      shutdown: () => Promise.reject(new Error('could not close')),
+    });
+    const summary = await executeRun({ config, testCases: testCases(3), runners: registry });
+    expect(summary.passed).toBe(3);
+  });
+});

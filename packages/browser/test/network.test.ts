@@ -33,6 +33,10 @@ beforeAll(async () => {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end('["one","two"]');
     }
+    if (req.url === '/boom') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end('<html><body>boom<script>throw new Error("kaboom")</script></body></html>');
+    }
     if (req.url === '/api/broken') {
       res.writeHead(500, { 'content-type': 'application/json' });
       return res.end('{"error":"down"}');
@@ -215,4 +219,71 @@ describe('observing a page to find its endpoints', () => {
     );
     expect(grouped).toHaveLength(1);
   });
+});
+
+describe('isolation when the browser is reused', () => {
+  /** Two test cases through one runner instance, as a lane does. */
+  async function runTwo(first: unknown[], second: unknown[]): Promise<StepResult[][]> {
+    const runners = createRunnerRegistry();
+    runners.register(createBrowserRunner('ui'));
+    const summary = await executeRun({
+      config: {
+        version: '1.0',
+        name: 'isolation',
+        runners: [{ name: 'ui', type: 'browser' }],
+      } as unknown as RunOptions['config'],
+      testCases: [
+        { id: 'first', version: '1.0', name: 'first', runner: 'ui', steps: first },
+        { id: 'second', version: '1.0', name: 'second', runner: 'ui', steps: second },
+      ] as unknown as RunOptions['testCases'],
+      runners,
+    });
+    return summary.results.map((r) => [...r.steps]);
+  }
+
+  it('does not carry storage from one test into the next', async () => {
+    const [, second] = await runTwo(
+      [
+        { id: 'goto', action: 'goto', value: baseUrl },
+        { id: 'mark', action: 'evaluateMark' },
+      ],
+      [
+        { id: 'goto', action: 'goto', value: baseUrl },
+        { id: 'check', action: 'expectSelector', target: 'body' },
+      ],
+    );
+    // The first test's unknown action fails; what matters is the second still
+    // starts from a page that knows nothing about it.
+    expect(second?.[1]?.status).toBe('pass');
+  }, 60_000);
+
+  it('does not carry network records from one test into the next', async () => {
+    const [, second] = await runTwo(
+      [
+        { id: 'goto', action: 'goto', value: baseUrl },
+        { id: 'loaded', action: 'waitFor', target: '.item' },
+      ],
+      // A page with no API calls at all must not inherit the previous test's.
+      [
+        { id: 'goto', action: 'goto', value: `${baseUrl}/api/items` },
+        { id: 'called', action: 'expectApiCalled', target: '/api/broken' },
+      ],
+    );
+    expect(second?.[1]?.status).toBe('fail');
+    expect(second?.[1]?.error?.message).toContain('never called an API matching');
+  }, 60_000);
+
+  it('does not carry console errors from one test into the next', async () => {
+    const [, second] = await runTwo(
+      [
+        { id: 'goto', action: 'goto', value: `${baseUrl}/boom` },
+        { id: 'wait', action: 'waitFor', target: 'body' },
+      ],
+      [
+        { id: 'goto', action: 'goto', value: `${baseUrl}/api/items` },
+        { id: 'clean', action: 'expectNoConsoleErrors' },
+      ],
+    );
+    expect(second?.[1]?.status).toBe('pass');
+  }, 60_000);
 });

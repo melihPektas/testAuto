@@ -45,7 +45,14 @@ export interface Runner {
    * after a few seconds so a hung page cannot hold up the run.
    */
   captureFailure?(ctx: RunContext): Promise<Record<string, unknown> | undefined>;
+  /** Called after every test case: release what belongs to one test. */
   dispose?(ctx: RunContext): Promise<void> | void;
+  /**
+   * Called once when the run is finished with this runner instance — after its
+   * last test, not after each one. Anything expensive enough to be worth
+   * keeping between tests (a browser process) is released here.
+   */
+  shutdown?(): Promise<void> | void;
 }
 
 export interface GenerateContext {

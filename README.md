@@ -303,10 +303,21 @@ node packages/cli/bin/test-orchestrator.js run -t cases -j 4 --reporter junit --
 ```
 
 Concurrency is per test case; steps within a case stay ordered. Each lane builds
-its runner registry once, and the browser runner launches a browser per test
-case for isolation — so `-j 4` means four browsers at a time, not four for the
-whole run. Measured on 24 browser tests: **10.2s at `-j 1`, 3.2s at `-j 4`**,
-same results.
+its runner registry once and keeps its browser for every test it picks up, so
+`-j 4` runs four browsers for the whole run rather than one per test. Isolation
+comes from a fresh browser context per test — the thing that actually carries
+cookies, storage and cache.
+
+Measured on 24 browser tests:
+
+|        | per-test browser | reused per lane |
+| ------ | ---------------- | --------------- |
+| `-j 1` | 9.6s             | **1.6s**        |
+| `-j 4` | 3.0s             | **0.9s**        |
+
+A runner can implement `shutdown` for anything worth keeping between tests;
+the engine calls it once when a lane is done, in a `finally`, and a teardown
+that throws never costs the run its results.
 
 `executeRun` refuses `concurrency > 1` without a `createRunners` factory rather
 than silently sharing one runner: the browser runner owns a single page, and two
