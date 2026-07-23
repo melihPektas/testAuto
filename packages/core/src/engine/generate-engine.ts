@@ -26,7 +26,7 @@ export async function executeGenerators(opts: GenerateRunOptions): Promise<Gener
   const env = opts.env ?? {};
   const options = opts.options ?? {};
   const signal = opts.signal ?? new AbortController().signal;
-  
+
   const ctx: GenerateContext = {
     config: opts.config,
     env,
@@ -40,7 +40,7 @@ export async function executeGenerators(opts: GenerateRunOptions): Promise<Gener
 
   for (const generator of opts.generators.list()) {
     const suite = await generator.generate(ctx);
-    
+
     for (const file of suite.files) {
       const target = opts.workspace.resolve(file.path);
       await mkdir(dirname(target), { recursive: true });

@@ -84,9 +84,7 @@ describe('executeRun', () => {
     let attempts = 0;
     const runner = makeRunner(() => {
       attempts += 1;
-      return attempts === 1
-        ? ({ status: 'fail', durationMs: 1 } satisfies StepResult)
-        : pass;
+      return attempts === 1 ? ({ status: 'fail', durationMs: 1 } satisfies StepResult) : pass;
     });
     const summary = await executeRun({
       config: makeConfig(),

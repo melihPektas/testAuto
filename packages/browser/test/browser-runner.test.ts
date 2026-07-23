@@ -1,10 +1,7 @@
 import { createServer, type Server } from 'node:http';
 
-
-
 import { executeRun, createRunnerRegistry } from '@test-orchestrator/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
 
 import { createBrowserRunner } from '../src/browser-runner.js';
 import { createUrlGenerator } from '../src/url-generator.js';
@@ -37,11 +34,17 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-function run(steps: unknown[]): Promise<RunOptions extends never ? never : Awaited<ReturnType<typeof executeRun>>> {
+function run(
+  steps: unknown[],
+): Promise<RunOptions extends never ? never : Awaited<ReturnType<typeof executeRun>>> {
   const runners = createRunnerRegistry();
   runners.register(createBrowserRunner('browser'));
   return executeRun({
-    config: { version: '1.0', name: 'ui', runners: [{ name: 'browser', type: 'browser' }] } as unknown as RunOptions['config'],
+    config: {
+      version: '1.0',
+      name: 'ui',
+      runners: [{ name: 'browser', type: 'browser' }],
+    } as unknown as RunOptions['config'],
     testCases: [
       { id: 't', version: '1.0', name: 'ui', runner: 'browser', steps } as unknown,
     ] as unknown as RunOptions['testCases'],

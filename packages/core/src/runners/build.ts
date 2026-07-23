@@ -7,7 +7,6 @@ import { createShellRunner } from './shell-runner.js';
 import type { RunnerRegistry } from '../registry/registries.js';
 import type { Runner } from '../types.js';
 
-
 export interface RunnerConfigInput {
   readonly name: string;
   readonly type: string;

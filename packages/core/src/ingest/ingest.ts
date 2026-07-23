@@ -74,7 +74,9 @@ async function findTestFiles(dir: string, base: string): Promise<string[]> {
   return found;
 }
 
-async function detectFramework(dir: string): Promise<{ framework: TestFramework; command: string }> {
+async function detectFramework(
+  dir: string,
+): Promise<{ framework: TestFramework; command: string }> {
   try {
     const pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
@@ -100,7 +102,10 @@ async function detectFramework(dir: string): Promise<{ framework: TestFramework;
 }
 
 function slugify(value: string): string {
-  const slug = value.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+  const slug = value
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
   return slug.length > 0 ? slug : 'test';
 }
 
@@ -148,9 +153,7 @@ export async function ingestProject(dir: string): Promise<IngestResult> {
           version: '1.0',
           name: `${file} › ${test}`,
           runner: 'shell',
-          steps: [
-            { id: 'run', action: `${command} ${file} ${filterFlag} ${shellQuote(test)}` },
-          ],
+          steps: [{ id: 'run', action: `${command} ${file} ${filterFlag} ${shellQuote(test)}` }],
         };
         testCases.push({
           path: `ingested/${id}.test-case.json`,

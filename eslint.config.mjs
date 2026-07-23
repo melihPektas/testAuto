@@ -1,8 +1,12 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
-import stylistic from '@stylistic/eslint-plugin';
 import unicorn from 'eslint-plugin-unicorn';
 import importx from 'eslint-plugin-import-x';
+// Formatting is prettier's job — it runs on every commit via lint-staged and
+// its settings already encode this project's style. eslint-config-prettier
+// turns off the *core* rules that would fight it, but not the @stylistic/*
+// equivalents, so those are simply not enabled: five rules that added nothing
+// to the style and produced a formatting stand-off on almost every change.
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
@@ -26,23 +30,20 @@ export default tseslint.config(
       },
     },
     plugins: {
-      '@stylistic': stylistic,
       unicorn,
       'import-x': importx,
     },
     rules: {
-      '@stylistic/semi': ['error', 'always'],
-      '@stylistic/quotes': ['error', 'single'],
-      '@stylistic/indent': ['error', 2],
-      '@stylistic/comma-dangle': ['error', 'always-multiline'],
-      '@stylistic/arrow-parens': ['error', 'always'],
       'unicorn/filename-case': 'off',
       'unicorn/prefer-module': 'off',
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
       ],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       'import-x/order': [
         'error',
         {

@@ -16,12 +16,22 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'to-web-'));
   await writeFile(
     join(dir, 'test-orchestrator.config.json'),
-    JSON.stringify({ version: '1.0', name: 'web-suite', runners: [{ name: 'default', type: 'shell' }] }),
+    JSON.stringify({
+      version: '1.0',
+      name: 'web-suite',
+      runners: [{ name: 'default', type: 'shell' }],
+    }),
     'utf8',
   );
   await writeFile(
     join(dir, 'ok.test-case.json'),
-    JSON.stringify({ id: 'ok', version: '1.0', name: 'ok', runner: 'default', steps: [{ action: 'exit 0' }] }),
+    JSON.stringify({
+      id: 'ok',
+      version: '1.0',
+      name: 'ok',
+      runner: 'default',
+      steps: [{ action: 'exit 0' }],
+    }),
     'utf8',
   );
 

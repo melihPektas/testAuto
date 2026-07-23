@@ -19,19 +19,18 @@ export async function loadConfig(path: string): Promise<TestOrchestratorConfig> 
   try {
     raw = await readFile(path, 'utf8');
   } catch (cause) {
-    throw new OrchestratorError(
-      `Failed to read config at ${path}: ${(cause as Error).message}`,
-      { code: 'ORCH_CONFIG_NOT_FOUND', cause },
-    );
+    throw new OrchestratorError(`Failed to read config at ${path}: ${(cause as Error).message}`, {
+      code: 'ORCH_CONFIG_NOT_FOUND',
+      cause,
+    });
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    throw new OrchestratorError(
-      `Failed to parse config: ${(err as Error).message}`,
-      { code: 'ORCH_CONFIG_LOAD' },
-    );
+    throw new OrchestratorError(`Failed to parse config: ${(err as Error).message}`, {
+      code: 'ORCH_CONFIG_LOAD',
+    });
   }
   // Single source of truth: the JSON Schema + AJV validators in @test-orchestrator/schema.
   const result = validateConfig(parsed);

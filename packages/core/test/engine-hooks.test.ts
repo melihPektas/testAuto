@@ -43,7 +43,14 @@ describe('engine lifecycle hooks', () => {
   it('emits run, test and step hooks in order', async () => {
     const seen: string[] = [];
     const hooks = createHooks<HookContext>();
-    for (const name of ['beforeRun', 'beforeTest', 'beforeStep', 'afterStep', 'afterTest', 'afterRun'] as const) {
+    for (const name of [
+      'beforeRun',
+      'beforeTest',
+      'beforeStep',
+      'afterStep',
+      'afterTest',
+      'afterRun',
+    ] as const) {
       hooks.on(name, () => {
         seen.push(name);
       });

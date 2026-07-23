@@ -11,7 +11,7 @@ export function createShellRunner(name?: string): Runner {
       const start = Date.now();
       return new Promise<StepResult>((resolve) => {
         const command = ctx.step?.action;
-        
+
         if (!command) {
           return resolve({
             status: 'fail',

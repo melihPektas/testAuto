@@ -1,12 +1,7 @@
 import { HookError } from '../errors/index.js';
 
 export type HookName =
-  | 'beforeRun'
-  | 'afterRun'
-  | 'beforeTest'
-  | 'afterTest'
-  | 'beforeStep'
-  | 'afterStep';
+  'beforeRun' | 'afterRun' | 'beforeTest' | 'afterTest' | 'beforeStep' | 'afterStep';
 
 export type HookHandler<Ctx> = (ctx: Ctx) => Promise<void> | void;
 
@@ -36,11 +31,9 @@ const HOOK_NAME_SET: ReadonlySet<string> = new Set(HOOK_NAMES);
 
 function assertHookName(name: string): asserts name is HookName {
   if (!HOOK_NAME_SET.has(name)) {
-    throw new HookError(
-      'ORCH_HOOK_ERROR',
-      `Unknown hook name: ${name}`,
-      { context: { name, known: HOOK_NAMES } },
-    );
+    throw new HookError('ORCH_HOOK_ERROR', `Unknown hook name: ${name}`, {
+      context: { name, known: HOOK_NAMES },
+    });
   }
 }
 
@@ -64,11 +57,7 @@ export function createHooks<Ctx>(): HooksImpl<Ctx> {
   function bucket(name: HookName): Set<HookHandler<Ctx>> {
     const set = handlers.get(name);
     if (!set) {
-      throw new HookError(
-        'ORCH_HOOK_ERROR',
-        `Unknown hook name: ${name}`,
-        { context: { name } },
-      );
+      throw new HookError('ORCH_HOOK_ERROR', `Unknown hook name: ${name}`, { context: { name } });
     }
     return set;
   }

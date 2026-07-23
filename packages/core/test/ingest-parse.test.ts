@@ -39,8 +39,8 @@ describe('parseTestFile', () => {
   });
 
   it('keeps escaped quotes inside names', () => {
-    const parsed = parseTestFile('it(\'handles \\\'quoted\\\' input\', () => {});');
-    expect(parsed.tests).toEqual(['handles \'quoted\' input']);
+    const parsed = parseTestFile("it('handles \\'quoted\\' input', () => {});");
+    expect(parsed.tests).toEqual(["handles 'quoted' input"]);
   });
 
   it('returns empty lists for a file with no tests', () => {

@@ -4,11 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  resolveConfigPath,
-  loadConfig,
-  resolveConfig,
-} from '../src/internal/config-loader.js';
+import { resolveConfigPath, loadConfig, resolveConfig } from '../src/internal/config-loader.js';
 import { OrchestratorError } from '../src/internal/errors.js';
 
 const validConfig = {
