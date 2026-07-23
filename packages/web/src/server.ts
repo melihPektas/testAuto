@@ -3,12 +3,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { failuresFromReport, triageFailures } from '@test-orchestrator/agent';
+import { failuresFromReport, llmOptionsFor, triageFailures } from '@test-orchestrator/agent';
 import { browserRunnerFactory } from '@test-orchestrator/browser';
 import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
+import type { LlmConfig } from '@test-orchestrator/schema';
 
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../public');
 
@@ -115,6 +116,13 @@ async function handleSaveTestCase(res: ServerResponse, body: unknown): Promise<v
 interface WebConfig {
   name: string;
   runners: { name: string; type: string; options?: Record<string, unknown> }[];
+  llm?: LlmConfig;
+}
+
+interface LoadedInputs {
+  config: WebConfig;
+  testCases: unknown[];
+  runners: ReturnType<typeof buildRunnerRegistry>;
 }
 
 function resolvePaths(input: { configPath?: string; testsDir?: string }): {
@@ -127,14 +135,7 @@ function resolvePaths(input: { configPath?: string; testsDir?: string }): {
   };
 }
 
-async function loadInputs(
-  configPath: string,
-  testsDir: string,
-): Promise<{
-  config: WebConfig;
-  testCases: unknown[];
-  runners: ReturnType<typeof buildRunnerRegistry>;
-}> {
+async function loadInputs(configPath: string, testsDir: string): Promise<LoadedInputs> {
   const config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
   const files = await listTests(testsDir);
   const testCases: unknown[] = [];
@@ -233,6 +234,7 @@ async function handleRunStream(
       send('triage:start', { count: failures.length });
       const byId = new Map(failures.map((f) => [f.testCaseId, f]));
       const result = await triageFailures(failures, {
+        ...llmOptionsFor('triage', config.llm),
         onTriage: (item) => {
           const failure = byId.get(item.testCaseId);
           send('triage', {

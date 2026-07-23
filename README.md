@@ -147,6 +147,39 @@ triage and repair — runs at **0**. That is not a detail: at 0.2 the same failu
 was triaged `test-bug` on one run and `product-bug` on the next, which is not an
 acceptable basis for editing files.
 
+### Per-role models
+
+The four model-backed roles — `author`, `matrix`, `triage`, `repair` — can each
+use a different model. Authoring is worth a large model; triage runs on every
+failure and rarely needs one.
+
+```json
+{
+  "llm": {
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "model": "qwen/qwen-2.5-coder-32b-instruct",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
+    "roles": {
+      "triage": { "model": "meta-llama/llama-3.1-8b-instruct" },
+      "repair": { "model": "meta-llama/llama-3.1-8b-instruct" }
+    }
+  }
+}
+```
+
+`apiKeyEnv` is the **name of an environment variable**, never the key. A config
+file is committed; a credential in one is a leak waiting to happen. Every log
+line reports the model, the endpoint and which variable the key came from — and
+never the key.
+
+Settings layer, most specific last: role defaults → `llm` → `llm.roles.<role>` →
+a `-m` / `-u` flag on the command. Environment variables still work underneath,
+so a bare `TEST_ORCHESTRATOR_LLM_URL` needs no config file at all.
+
+A misconfigured model degrades rather than crashes: pointing `triage` at a model
+the server does not have produced a low-confidence result naming the HTTP 404,
+and the run carried on.
+
 ## 📝 Authoring tests
 
 ```bash

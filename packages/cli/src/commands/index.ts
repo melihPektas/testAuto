@@ -4,11 +4,12 @@ import { join, resolve } from 'node:path';
 import {
   applyRepair,
   authorSite,
+  describeProvider,
+  llmOptionsFor,
   failuresFromReport,
   matrixSite,
   proposeRepair,
   repairIsSafe,
-  resolveLlm,
   triageFailure,
   triageFailures,
   writeAuthored,
@@ -34,10 +35,34 @@ import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
 
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
-import type { TestCase } from '@test-orchestrator/schema';
+import type { LlmConfig, TestCase } from '@test-orchestrator/schema';
 import type { Command } from 'commander';
 
 const logger = createLogger();
+
+/**
+ * The `llm` block from the config, if there is a config. These commands are
+ * useful against a bare directory too, so a missing config is not an error.
+ */
+async function llmConfig(configPath?: string): Promise<LlmConfig | undefined> {
+  try {
+    const { config } = await resolveConfig(configPath);
+    return config.llm;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Log which provider a role will use, without ever printing the key. */
+function announce(
+  role: Parameters<typeof describeProvider>[0],
+  config: LlmConfig | undefined,
+  overrides: Record<string, unknown>,
+): void {
+  const p = describeProvider(role, config, overrides);
+  const key = p.hasKey ? ` · key from ${p.keyFrom ?? 'environment'}` : '';
+  logger.info(`${role}: ${p.model} at ${p.baseUrl}${key}`);
+}
 
 export function registerCommands(program: Command): void {
   program
@@ -133,15 +158,15 @@ export function registerCommands(program: Command): void {
       const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.';
 
       try {
-        const llm = resolveLlm({
+        const overrides = {
           ...(model !== undefined ? { model } : {}),
           ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
-        });
-        logger.info(`authoring with ${llm.model} at ${llm.baseUrl}`);
+        };
+        const cfg = await llmConfig(undefined);
+        announce('author', cfg, overrides);
 
         const site = await authorSite(url, {
-          ...(model !== undefined ? { model } : {}),
-          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+          ...llmOptionsFor('author', cfg, overrides),
           maxPages: int('pages', 3),
           count: int('count', 3),
           onPage: (pageUrl, accepted, rejected) => {
@@ -191,9 +216,14 @@ export function registerCommands(program: Command): void {
       const parsedLimit = Number.parseInt(typeof rawLimit === 'string' ? rawLimit : '', 10);
 
       try {
-        const result = await matrixSite(url, {
+        const overrides = {
           ...(model !== undefined ? { model } : {}),
           ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+        };
+        const cfg = await llmConfig(undefined);
+        announce('matrix', cfg, overrides);
+        const result = await matrixSite(url, {
+          ...llmOptionsFor('matrix', cfg, overrides),
           limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 500,
         });
 
@@ -277,9 +307,14 @@ export function registerCommands(program: Command): void {
 
         const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
         const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
-        const summary = await triageFailures(failures, {
+        const overrides = {
           ...(model !== undefined ? { model } : {}),
           ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+        };
+        const cfg = await llmConfig(undefined);
+        announce('triage', cfg, overrides);
+        const summary = await triageFailures(failures, {
+          ...llmOptionsFor('triage', cfg, overrides),
           onTriage: (triage) => {
             const line = `  [${triage.verdict}] ${triage.testCaseId} (${triage.confidence}, by ${triage.source}) — ${triage.reason}`;
             if (triage.verdict === 'product-bug') {
@@ -365,7 +400,7 @@ export function registerCommands(program: Command): void {
 
         const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
         const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
-        const llm = {
+        const overrides = {
           ...(model !== undefined ? { model } : {}),
           ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
         };
@@ -373,6 +408,12 @@ export function registerCommands(program: Command): void {
         const { config } = await resolveConfig(
           typeof opts['config'] === 'string' ? opts['config'] : undefined,
         );
+        // Repair leans on triage's verdict, so both roles are resolved here and
+        // may legitimately use different models.
+        const triageLlm = llmOptionsFor('triage', config.llm, overrides);
+        const repairLlm = llmOptionsFor('repair', config.llm, overrides);
+        announce('triage', config.llm, overrides);
+        announce('repair', config.llm, overrides);
         const makeRunners = (): ReturnType<typeof buildRunnerRegistry> =>
           buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
 
@@ -382,8 +423,8 @@ export function registerCommands(program: Command): void {
           if (entry === undefined) {
             continue;
           }
-          const triage = await triageFailure(failure, llm);
-          const proposal = await proposeRepair(entry.testCase, failure, triage, llm);
+          const triage = await triageFailure(failure, triageLlm);
+          const proposal = await proposeRepair(entry.testCase, failure, triage, repairLlm);
           if (proposal.repair === undefined) {
             logger.info(`  ${failure.testCaseId}: no repair — ${proposal.declined ?? 'declined'}`);
             continue;

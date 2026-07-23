@@ -35,6 +35,7 @@ export const configSchema = {
       additionalProperties: { type: 'string' },
     },
     defaults: { $ref: '#/$defs/DefaultsConfig' },
+    llm: { $ref: '#/$defs/LlmConfig' },
     logLevel: {
       type: 'string',
       enum: ['debug', 'info', 'warn', 'error', 'silent'],
@@ -107,6 +108,40 @@ export const configSchema = {
         afterAll: { type: 'string' },
         beforeEach: { type: 'string' },
         afterEach: { type: 'string' },
+      },
+    },
+    LlmRoleConfig: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        baseUrl: { type: 'string' },
+        model: { type: 'string' },
+        // The NAME of an environment variable, never a key. A config file is
+        // committed; a credential in one is a leak waiting to happen.
+        apiKeyEnv: { type: 'string' },
+        temperature: { type: 'number', minimum: 0, maximum: 2 },
+        timeoutMs: { type: 'integer', minimum: 1 },
+      },
+    },
+    LlmConfig: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        baseUrl: { type: 'string' },
+        model: { type: 'string' },
+        apiKeyEnv: { type: 'string' },
+        temperature: { type: 'number', minimum: 0, maximum: 2 },
+        timeoutMs: { type: 'integer', minimum: 1 },
+        roles: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            author: { $ref: '#/$defs/LlmRoleConfig' },
+            matrix: { $ref: '#/$defs/LlmRoleConfig' },
+            triage: { $ref: '#/$defs/LlmRoleConfig' },
+            repair: { $ref: '#/$defs/LlmRoleConfig' },
+          },
+        },
       },
     },
     DefaultsConfig: {
