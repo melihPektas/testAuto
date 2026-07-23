@@ -44,6 +44,19 @@ export interface RunOptions {
   readonly signal?: AbortSignal;
   /** Lifecycle hooks (see {@link createHooks}); emitted around the run, tests and steps. */
   readonly hooks?: Hooks<HookContext>;
+  /**
+   * How many test cases to run at once (default 1).
+   *
+   * Anything above 1 requires {@link RunOptions.createRunners}: a runner holds
+   * state for the test it is running — the browser runner owns a single page —
+   * so concurrent tests must not share one.
+   */
+  readonly concurrency?: number;
+  /**
+   * Build a fresh, independent runner registry. Called once per concurrent
+   * lane, never per test, so a browser is launched once per lane.
+   */
+  readonly createRunners?: () => RunnerRegistry | Promise<RunnerRegistry>;
 }
 
 export interface RunSummary {
@@ -293,16 +306,58 @@ export async function executeRun(options: RunOptions): Promise<RunSummary> {
   await options.hooks?.emit('beforeRun', { config });
   await emit(reporters, { type: 'run:start', config });
 
-  const results: TestResult[] = [];
-  for (const testCase of testCases) {
-    await emit(reporters, { type: 'test:start', testCase });
-    const result = await runTestCase(testCase, config, runners, reporters, base, options.hooks);
-    results.push(result);
-    await emit(reporters, { type: 'test:end', result });
+  const concurrency = Math.max(1, Math.trunc(options.concurrency ?? 1));
+  if (concurrency > 1 && options.createRunners === undefined) {
+    throw new RunnerError(
+      'ORCH_RUNTIME_ERROR',
+      'concurrency above 1 requires createRunners: a runner holds state for the test it is running, so concurrent tests cannot share one',
+    );
   }
 
+  // Reporters are written as if one thing happens at a time, so their events
+  // are serialised even though the tests are not.
+  let emitChain: Promise<void> = Promise.resolve();
+  const emitSerial = async (event: OrchestratorEvent): Promise<void> => {
+    const next = emitChain.then(() => emit(reporters, event));
+    emitChain = next.catch(() => undefined);
+    return next;
+  };
+
+  const results: TestResult[] = new Array<TestResult>(testCases.length);
+  let cursor = 0;
+
+  const lane = async (): Promise<void> => {
+    // One registry per lane, built once: a lane runs its tests back to back and
+    // reuses the same browser for all of them.
+    const laneRunners =
+      options.createRunners === undefined ? runners : await options.createRunners();
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const testCase = testCases[index];
+      if (testCase === undefined) {
+        return;
+      }
+      await emitSerial({ type: 'test:start', testCase });
+      const result = await runTestCase(
+        testCase,
+        config,
+        laneRunners,
+        reporters,
+        base,
+        options.hooks,
+      );
+      // Written by index, so the summary keeps the declared order no matter
+      // which lane finished first.
+      results[index] = result;
+      await emitSerial({ type: 'test:end', result });
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, testCases.length) }, lane));
+
   const durationMs = Date.now() - start;
-  await emit(reporters, { type: 'run:end', config, totalDurationMs: durationMs });
+  await emit(reporters, { type: 'run:end', config, totalDurationMs: durationMs, results });
   await options.hooks?.emit('afterRun', { config });
   const finishedAt = new Date();
 

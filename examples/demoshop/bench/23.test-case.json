@@ -1,0 +1,27 @@
+{
+  "id": "bench-23",
+  "version": "1.0",
+  "name": "audit run 23",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "http://localhost:4700/login"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "title",
+      "action": "expectTitle",
+      "value": "Sign in"
+    },
+    {
+      "id": "audit",
+      "action": "audit"
+    }
+  ]
+}

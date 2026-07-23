@@ -23,6 +23,9 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 - **Comprehensive UI audit** — one browser step checks title, rendered body,
   console/JS errors, broken images, link count, meta description, and mobile
   responsiveness.
+- **Parallel execution** — run N test cases at once (`-j`). Each lane gets its
+  own runner instance, because a runner holds state for the test it is running.
+  Measured on 24 browser tests: **10.2s → 3.2s at `-j 4`**, same results.
 - **Reporters** — `json` and `junit` file reports, plus a live console reporter.
 - **Generators** — produce test-case files from templates or from URLs.
 - **Ingest** — scan a project, detect its framework (vitest/jest/playwright/mocha),
@@ -138,6 +141,24 @@ dropped with a reason.
 
 Measured on a real listing page: **500 distinct cases from one model call in
 2m14s.**
+
+### Running in parallel
+
+```bash
+node packages/cli/bin/test-orchestrator.js run -t matrix -j 4
+```
+
+Concurrency is per test case; steps within a case stay ordered. Each lane builds
+its own runners once and reuses them, so `-j 4` launches four browsers, not one
+per test.
+
+`executeRun` refuses `concurrency > 1` without a `createRunners` factory rather
+than silently sharing one runner: the browser runner owns a single page, and two
+tests driving one page fail in ways that are very hard to read.
+
+Results keep the order the tests were declared in, whichever lane finished
+first — including in the JSON and JUnit reports, which previously recorded
+completion order.
 
 ### Triage
 

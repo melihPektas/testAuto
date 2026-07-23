@@ -360,6 +360,7 @@ export function registerCommands(program: Command): void {
     .option('-t, --tests <dir>', 'directory holding *.test-case.json files', '.')
     .option('-r, --reporter <type>', 'also write a file report: json or junit')
     .option('-o, --out <path>', 'output path for the file reporter')
+    .option('-j, --concurrency <n>', 'run this many test cases at once', '1')
     .action(async (opts: Record<string, unknown>) => {
       try {
         const configPath = typeof opts['config'] === 'string' ? opts['config'] : undefined;
@@ -370,7 +371,8 @@ export function registerCommands(program: Command): void {
           process.cwd(),
           typeof opts['tests'] === 'string' ? opts['tests'] : '.',
         );
-        const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json'));
+        // Sorted so a run is reproducible; readdir order is not guaranteed.
+        const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json')).sort();
         if (files.length === 0) {
           logger.warn(`no *.test-case.json files found in ${testsDir}`);
           return;
@@ -387,7 +389,17 @@ export function registerCommands(program: Command): void {
         }
         logger.info(`discovered ${testCases.length} test case(s) in ${testsDir}`);
 
-        const runners = buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+        const makeRunners = (): ReturnType<typeof buildRunnerRegistry> =>
+          buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+        const runners = makeRunners();
+        const rawConcurrency = opts['concurrency'];
+        const concurrency = Math.max(
+          1,
+          Number.parseInt(typeof rawConcurrency === 'string' ? rawConcurrency : '', 10) || 1,
+        );
+        if (concurrency > 1) {
+          logger.info(`running ${String(concurrency)} test case(s) at a time`);
+        }
 
         const consoleReporter: Reporter = {
           kind: 'reporter',
@@ -435,6 +447,8 @@ export function registerCommands(program: Command): void {
           runners,
           reporters,
           logger,
+          concurrency,
+          createRunners: makeRunners,
         });
 
         logger.info(

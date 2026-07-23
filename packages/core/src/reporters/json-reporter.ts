@@ -21,13 +21,18 @@ export function createJsonReporter(outputPath: string): Reporter {
         return;
       }
       if (event.type === 'run:end') {
+        // The run reports the declared order; the accumulated events only match
+        // it when nothing ran concurrently.
+        // Guarded: reporters also receive events from plugins and tests, which
+        // may construct a run:end without them.
+        const ordered = (event.results ?? []).length > 0 ? [...event.results] : results;
         const document = {
-          total: results.length,
-          passed: results.filter((r) => r.status === 'pass').length,
-          failed: results.filter((r) => r.status === 'fail').length,
-          flaky: results.filter((r) => r.status === 'flaky').length,
+          total: ordered.length,
+          passed: ordered.filter((r) => r.status === 'pass').length,
+          failed: ordered.filter((r) => r.status === 'fail').length,
+          flaky: ordered.filter((r) => r.status === 'flaky').length,
           durationMs: event.totalDurationMs,
-          results,
+          results: ordered,
         };
         await writeFile(outputPath, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
       }

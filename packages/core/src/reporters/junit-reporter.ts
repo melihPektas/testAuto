@@ -40,12 +40,14 @@ export function createJunitReporter(outputPath: string): Reporter {
         return;
       }
       if (event.type === 'run:end') {
-        const failures = results.filter((r) => r.status === 'fail').length;
-        const cases = results.map(renderTestCase).join('\n');
+        // Prefer the declared order; accumulated events are in completion order.
+        const ordered = (event.results ?? []).length > 0 ? [...event.results] : results;
+        const failures = ordered.filter((r) => r.status === 'fail').length;
+        const cases = ordered.map(renderTestCase).join('\n');
         const xml =
           '<?xml version="1.0" encoding="UTF-8"?>\n' +
           '<testsuites>\n' +
-          `  <testsuite name="orchestrator" tests="${results.length}" failures="${failures}">\n` +
+          `  <testsuite name="orchestrator" tests="${ordered.length}" failures="${failures}">\n` +
           `${cases}${cases ? '\n' : ''}` +
           '  </testsuite>\n' +
           '</testsuites>\n';

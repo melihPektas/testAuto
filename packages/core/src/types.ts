@@ -133,9 +133,21 @@ export interface TestResult {
   readonly finishedAt: Date;
 }
 
+export interface RunEndEvent {
+  type: 'run:end';
+  config: TestOrchestratorConfig;
+  totalDurationMs: number;
+  /**
+   * Every result, in the order the tests were declared. Reporters that
+   * accumulate `test:end` events see completion order instead, which stops
+   * matching the declared order as soon as tests run concurrently.
+   */
+  results: readonly TestResult[];
+}
+
 export type OrchestratorEvent =
   | { type: 'run:start'; config: TestOrchestratorConfig }
-  | { type: 'run:end'; config: TestOrchestratorConfig; totalDurationMs: number }
+  | RunEndEvent
   | { type: 'test:start'; testCase: TestCase }
   | { type: 'test:end'; result: TestResult }
   | { type: 'step:start'; testCase: TestCase; step: Step }
