@@ -1,355 +1,614 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test Orchestrator Dashboard</title>
-  <style>
-    :root {
-      --bg: #0f1420; --card: #171d2b; --muted: #8b95a7; --text: #e6e9ef;
-      --border: #263047; --accent: #5b8cff;
-      --pass-bg: #123524; --pass-fg: #4ade80;
-      --fail-bg: #3a1620; --fail-fg: #f87171;
-      --flaky-bg: #3a2f12; --flaky-fg: #fbbf24;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      display: flex; justify-content: center; padding: 2rem 1rem;
-    }
-    .container { max-width: 860px; width: 100%; }
-    h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
-    .sub { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.9rem; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
-    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
-    .fields { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .field { flex: 1; min-width: 220px; }
-    input {
-      width: 100%; padding: 0.5rem 0.65rem; border-radius: 8px;
-      border: 1px solid var(--border); background: #0e1320; color: var(--text); font-size: 0.9rem;
-    }
-    .actions { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
-    button {
-      padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--border);
-      background: #1f273a; color: var(--text); font-size: 0.9rem; cursor: pointer;
-    }
-    button:hover:not(:disabled) { border-color: var(--accent); }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #08122e; font-weight: 600; }
-    button:disabled { opacity: 0.5; cursor: default; }
-    .chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-    .chip { background: #0e1320; border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.7rem; font-size: 0.8rem; }
-    .chip b { color: var(--accent); }
-    ul.tests { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.9rem; }
-    .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; }
-    .badge.pass { background: var(--pass-bg); color: var(--pass-fg); }
-    .badge.fail { background: var(--fail-bg); color: var(--fail-fg); }
-    .badge.flaky { background: var(--flaky-bg); color: var(--flaky-fg); }
-    .summary { font-weight: 600; margin-bottom: 0.75rem; }
-    .result-row { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0; border-top: 1px solid var(--border); }
-    .result-row .name { flex: 1; }
-    .result-row .dur { color: var(--muted); font-size: 0.82rem; }
-    .err { color: var(--fail-fg); font-size: 0.8rem; margin: 0.1rem 0 0.4rem 0.2rem; }
-    #log {
-      background: #080c14; border: 1px solid var(--border); border-radius: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem;
-      color: #9fe6b0; padding: 0.75rem; max-height: 240px; overflow-y: auto; white-space: pre-wrap;
-    }
-    .muted { color: var(--muted); }
-    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
-    ul.tests li a { color: var(--accent); text-decoration: none; cursor: pointer; }
-    ul.tests li a:hover { text-decoration: underline; }
-    #editorText {
-      width: 100%; min-height: 260px; resize: vertical;
-      background: #080c14; color: #d6e2ff; border: 1px solid var(--border);
-      border-radius: 8px; padding: 0.75rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.5;
-    }
-    .editor-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
-    .editor-head .file { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
-    .ok { color: var(--pass-fg); font-size: 0.82rem; }
-    /* Verdict colours are semantic, not decorative: what needs a human is red,
-       what the suite can fix itself is amber, what was never our code is slate. */
-    .verdict { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; font-family: ui-monospace, monospace; }
-    .verdict.product-bug { background: #3a1620; color: #f87171; }
-    .verdict.test-bug    { background: #33260f; color: #fbbf24; }
-    .verdict.test-data   { background: #2b1f3d; color: #c4b5fd; }
-    .verdict.flaky       { background: #33260f; color: #fbbf24; }
-    .verdict.environment { background: #1b2537; color: #93b4e8; }
-    .triage-row { border-top: 1px solid var(--border); padding: 0.7rem 0; display: flex; gap: 0.7rem; align-items: flex-start; }
-    .triage-row .body { flex: 1; min-width: 0; }
-    .triage-row .who { font-weight: 600; margin-bottom: 0.15rem; }
-    .triage-row .why { font-size: 0.85rem; color: var(--text); }
-    .triage-row .meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
-    .triage-row .fix { font-size: 0.8rem; color: var(--pass-fg); margin-top: 0.25rem; }
-    .triage-row .low { color: var(--flaky-fg); }
-    .evidence { margin-top: 0.4rem; font-size: 0.78rem; color: var(--muted); font-family: ui-monospace, monospace; }
-    .evidence code { color: #d6e2ff; }
-    .shot { margin-top: 0.5rem; }
-    .shot img { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; display: block; }
-    .shot summary { cursor: pointer; color: var(--accent); font-size: 0.78rem; }
-    .toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); }
-    .toggle input { width: auto; }
-    .verdict-counts { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Test Orchestrator</title>
+<style>
+  :root {
+    /* A blue-biased near-black, so the neutrals belong to the same family as
+       the informational blue rather than being inherited grey. */
+    --ground: #0b0e14;
+    --panel: #131823;
+    --well: #0d1119;
+    --border: #222a3a;
+    --border-soft: #1a2130;
+    --text: #e8ecf4;
+    --muted: #8794ab;
+    /* One warm accent, spent only on the primary action. */
+    --primary: #ff6b2c;
+    --primary-ink: #1a0a02;
+    --pass: #4ade80;
+    --fail: #f87171;
+    --warn: #fbbf24;
+    --info: #93b4e8;
+    --violet: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 1.5rem 1rem 4rem;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+
+  /* ---- header ---- */
+  .top { display: flex; align-items: center; gap: 0.85rem; padding-bottom: 0.5rem; }
+  .mark {
+    width: 38px; height: 38px; border-radius: 10px; flex: none;
+    background: linear-gradient(150deg, var(--primary), #b7381a);
+    display: grid; place-items: center; font-weight: 800; color: var(--primary-ink);
+    font-size: 0.95rem; letter-spacing: -0.02em;
+  }
+  .top h1 { font-size: 1.15rem; margin: 0; letter-spacing: -0.01em; }
+  .top .path { color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, monospace; }
+  .top .spacer { flex: 1; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 0.35rem 0.8rem; font-size: 0.8rem; font-weight: 600; background: var(--panel);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .pill.pass { color: var(--pass); } .pill.pass .dot { background: var(--pass); }
+  .pill.fail { color: var(--fail); } .pill.fail .dot { background: var(--fail); }
+  .pill.busy { color: var(--warn); } .pill.busy .dot { background: var(--warn); animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .pill.busy .dot { animation: none; } }
+
+  /* ---- panels ---- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+  .panel > header {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border-soft);
+  }
+  .panel > header h2 { font-size: 0.95rem; margin: 0; font-weight: 650; }
+  .panel > header .tech {
+    margin-left: auto; color: var(--muted); font-size: 0.72rem;
+    font-family: ui-monospace, monospace; letter-spacing: 0.02em;
+  }
+  .panel .body { padding: 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; }
+
+  label.lbl {
+    display: block; font-size: 0.68rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 0.35rem; font-weight: 600;
+  }
+  input[type="text"], input[type="url"], select, textarea {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--well); color: var(--text);
+    font-size: 0.88rem; font-family: inherit;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible,
+  button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 2px;
+  }
+  .row { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 130px; }
+
+  /* Segmented control: one choice out of a few, always all visible. */
+  .seg { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .seg button {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.45rem 0.85rem; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--well);
+    color: var(--muted); font-size: 0.84rem; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { border-color: var(--primary); color: var(--text); }
+  .seg button[aria-pressed="true"] .dot { background: var(--primary); }
+
+  button {
+    padding: 0.55rem 1rem; border-radius: 9px; border: 1px solid var(--border);
+    background: #1b2231; color: var(--text); font-size: 0.88rem; font-family: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: #38455e; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary {
+    background: var(--primary); border-color: var(--primary); color: var(--primary-ink);
+    font-weight: 700; padding: 0.7rem 1rem;
+    box-shadow: 0 6px 22px -8px var(--primary);
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.07); }
+  .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .toggle { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--muted); font-size: 0.85rem; }
+  .toggle input { width: auto; }
+
+  /* ---- stat tiles ---- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.7rem; }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--well); border: 1px solid var(--border-soft);
+    border-radius: 10px; padding: 0.8rem; text-align: center;
+  }
+  .stat .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat .k { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.2rem; }
+  .stat.pass .n { color: var(--pass); }
+  .stat.fail .n { color: var(--fail); }
+  .stat.flaky .n { color: var(--warn); }
+
+  /* ---- checklist rows ---- */
+  .rows { display: flex; flex-direction: column; }
+  .rowline {
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.55rem 0.2rem; border-top: 1px solid var(--border-soft); font-size: 0.88rem;
+  }
+  .rowline:first-child { border-top: none; }
+  .rowline .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rowline .t { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+  .tick { width: 1.1rem; text-align: center; font-weight: 700; }
+  .tick.pass { color: var(--pass); }
+  .tick.fail { color: var(--fail); }
+  .tick.flaky { color: var(--warn); }
+  .msg { color: var(--fail); font-size: 0.78rem; padding: 0 0 0.45rem 1.8rem; font-family: ui-monospace, monospace; }
+
+  /* ---- triage ---- */
+  .verdict {
+    display: inline-block; padding: 0.18rem 0.55rem; border-radius: 6px;
+    font-size: 0.7rem; font-weight: 700; font-family: ui-monospace, monospace; flex: none;
+  }
+  .verdict.product-bug { background: #3a1620; color: var(--fail); }
+  .verdict.test-bug { background: #33260f; color: var(--warn); }
+  .verdict.flaky { background: #33260f; color: var(--warn); }
+  .verdict.test-data { background: #2b1f3d; color: var(--violet); }
+  .verdict.environment { background: #1b2537; color: var(--info); }
+  .tri { display: flex; gap: 0.7rem; padding: 0.8rem 0; border-top: 1px solid var(--border-soft); }
+  .tri:first-child { border-top: none; }
+  .tri .b { flex: 1; min-width: 0; }
+  .tri .who { font-weight: 650; }
+  .tri .why { font-size: 0.86rem; }
+  .tri .fix { font-size: 0.82rem; color: var(--pass); margin-top: 0.2rem; }
+  .ev { font-size: 0.76rem; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 0.3rem; }
+  .ev code { color: #cfe0ff; }
+  .tri .meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.3rem; }
+  .tri .meta.low { color: var(--warn); }
+  details.shot { margin-top: 0.45rem; }
+  details.shot summary { cursor: pointer; color: var(--info); font-size: 0.76rem; }
+  details.shot img { max-width: 100%; margin-top: 0.4rem; border: 1px solid var(--border); border-radius: 9px; display: block; }
+
+  /* ---- misc ---- */
+  #log {
+    background: #05070c; border: 1px solid var(--border-soft); border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem;
+    color: #8fe3ab; padding: 0.75rem; max-height: 230px; overflow: auto; white-space: pre-wrap;
+  }
+  .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .chip {
+    background: var(--well); border: 1px solid var(--border-soft); border-radius: 999px;
+    padding: 0.22rem 0.7rem; font-size: 0.76rem; color: var(--muted);
+  }
+  .chip b { color: var(--text); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .err { color: var(--fail); font-size: 0.84rem; }
+  .ok { color: var(--pass); font-size: 0.84rem; }
+  ul.files { list-style: none; margin: 0; padding: 0; max-height: 210px; overflow: auto; }
+  ul.files li { border-top: 1px solid var(--border-soft); }
+  ul.files li:first-child { border-top: none; }
+  ul.files button {
+    width: 100%; text-align: left; background: none; border: none; color: var(--info);
+    padding: 0.4rem 0.2rem; font-family: ui-monospace, monospace; font-size: 0.8rem; cursor: pointer;
+  }
+  ul.files button:hover:not(:disabled) { color: var(--text); }
+  #editorText { min-height: 240px; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+  .hidden { display: none; }
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>Test Orchestrator Dashboard</h1>
-    <p class="sub">Browse test cases, run them, and watch results stream live.</p>
-
-    <div class="card">
-      <div class="fields">
-        <div class="field">
-          <label for="configPath">Config path</label>
-          <input id="configPath" type="text" value="test-orchestrator.config.json" />
-        </div>
-        <div class="field">
-          <label for="testsDir">Tests dir</label>
-          <input id="testsDir" type="text" value="." />
-        </div>
-      </div>
-      <div class="actions">
-        <button id="loadConfigBtn">Load config</button>
-        <button id="loadTestsBtn">Load tests</button>
-        <button id="runBtn" class="primary">Run</button>
-        <label class="toggle"><input type="checkbox" id="triageToggle" checked /> Triage failures</label>
-      </div>
-      <div id="config"></div>
-      <div id="tests"></div>
+<div class="wrap">
+  <div class="top">
+    <div class="mark">TO</div>
+    <div>
+      <h1>Test Orchestrator</h1>
+      <div class="path">explore · author · run · triage</div>
     </div>
-
-    <div class="card" id="editorCard" style="display:none">
-      <div class="editor-head">
-        <h2 style="margin:0">Edit test case</h2>
-        <span class="file muted" id="editorFile"></span>
-        <button id="saveBtn" class="primary">Save</button>
-      </div>
-      <textarea id="editorText" spellcheck="false"></textarea>
-      <div id="editorStatus"></div>
-    </div>
-
-    <div class="card" id="logCard" style="display:none">
-      <h2>Live log</h2>
-      <div id="log"></div>
-    </div>
-
-    <div class="card" id="triageCard" style="display:none">
-      <h2>Triage</h2>
-      <div id="triageCounts" class="verdict-counts"></div>
-      <div id="triage"></div>
-    </div>
-
-    <div class="card" id="resultsCard" style="display:none">
-      <h2>Results</h2>
-      <div id="results"></div>
-    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">idle</span></span>
   </div>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const cfgPath = () => $('configPath').value.trim();
-    const testsDir = () => $('testsDir').value.trim();
+  <div class="grid">
+    <section class="panel">
+      <header>
+        <h2>Generate from a URL</h2>
+        <span class="tech">llm · playwright</span>
+      </header>
+      <div class="body">
+        <div>
+          <label class="lbl" for="siteUrl">Site to test</label>
+          <input id="siteUrl" type="url" placeholder="https://example.com/products" />
+        </div>
 
-    $('loadConfigBtn').addEventListener('click', async () => {
-      const box = $('config');
-      box.innerHTML = '<span class="muted">Loading…</span>';
-      try {
-        const res = await fetch(`/api/config?path=${encodeURIComponent(cfgPath())}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const cfg = await res.json();
-        const chips = cfg.runners.map((r) => `<span class="chip"><b>${r.name}</b> · ${r.type}</span>`).join('');
-        box.innerHTML = `<div style="margin-top:0.75rem"><span class="muted">Suite:</span> ${cfg.name}</div><div class="chips">${chips}</div>`;
-      } catch (err) {
-        box.innerHTML = `<div class="err">Error: ${err.message}</div>`;
+        <div>
+          <label class="lbl" for="modeSeg">Mode</label>
+          <div class="seg" id="modeSeg" role="group" aria-label="Generation mode">
+            <button type="button" data-mode="author" aria-pressed="true"><span class="dot"></span>Scenarios</button>
+            <button type="button" data-mode="matrix" aria-pressed="false"><span class="dot"></span>Combination matrix</button>
+          </div>
+        </div>
+
+        <div class="row" id="authorOpts">
+          <div>
+            <label class="lbl" for="genPages">Pages</label>
+            <select id="genPages"><option>1</option><option selected>2</option><option>3</option><option>5</option></select>
+          </div>
+          <div>
+            <label class="lbl" for="genCount">Scenarios / page</label>
+            <select id="genCount"><option>2</option><option selected>3</option><option>5</option></select>
+          </div>
+        </div>
+
+        <div class="row hidden" id="matrixOpts">
+          <div>
+            <label class="lbl" for="genLimit">Max cases</label>
+            <select id="genLimit"><option>50</option><option>100</option><option selected>500</option></select>
+          </div>
+        </div>
+
+        <div>
+          <label class="lbl" for="genDir">Write into</label>
+          <input id="genDir" type="text" value="." />
+        </div>
+
+        <button id="genBtn" class="primary">Generate tests</button>
+        <div id="genOut" style="font-size:0.82rem"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Run</h2>
+        <span class="tech">orchestrator engine</span>
+      </header>
+      <div class="body">
+        <div>
+          <label class="lbl" for="configPath">Config</label>
+          <input id="configPath" type="text" value="test-orchestrator.config.json" />
+        </div>
+        <div class="row">
+          <div>
+            <label class="lbl" for="testsDir">Tests directory</label>
+            <input id="testsDir" type="text" value="." />
+          </div>
+          <div>
+            <label class="lbl" for="conc">Parallel</label>
+            <select id="conc"><option>1</option><option selected>4</option><option>8</option></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="loadConfigBtn">Load config</button>
+          <button id="loadTestsBtn">Load tests</button>
+          <label class="toggle"><input type="checkbox" id="triageToggle" checked /> Triage failures</label>
+        </div>
+        <div class="chips" id="configChips"></div>
+        <button id="runBtn" class="primary">Run tests</button>
+        <ul class="files" id="fileList"></ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel hidden" id="resultsPanel">
+    <header><h2>Results</h2><span class="tech" id="resultsTech"></span></header>
+    <div class="body">
+      <div class="stats" id="stats"></div>
+      <div class="rows" id="results"></div>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="triagePanel">
+    <header><h2>Triage</h2><span class="tech" id="triageTech"></span></header>
+    <div class="body">
+      <div class="chips" id="triageCounts"></div>
+      <div id="triage"></div>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="logPanel">
+    <header><h2>Live log</h2><span class="tech">server-sent events</span></header>
+    <div class="body"><div id="log"></div></div>
+  </section>
+
+  <section class="panel hidden" id="editorPanel">
+    <header><h2>Edit test case</h2><span class="tech" id="editorFile"></span></header>
+    <div class="body">
+      <textarea id="editorText" spellcheck="false"></textarea>
+      <div class="actions">
+        <button id="saveBtn" class="primary">Save</button>
+        <span id="editorStatus"></span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) =>
+    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const show = (id, on) => $(id).classList.toggle('hidden', !on);
+
+  const setStatus = (text, kind) => {
+    $('statusPill').className = 'pill' + (kind ? ' ' + kind : '');
+    $('statusText').textContent = text;
+  };
+
+  const log = (line) => {
+    show('logPanel', true);
+    const el = $('log');
+    el.textContent += line + '\n';
+    el.scrollTop = el.scrollHeight;
+  };
+
+  const cfgPath = () => $('configPath').value.trim() || 'test-orchestrator.config.json';
+  const testsDir = () => $('testsDir').value.trim() || '.';
+
+  // ---------- generation mode ----------
+  let mode = 'author';
+  $('modeSeg').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn) return;
+    mode = btn.dataset.mode;
+    for (const b of $('modeSeg').querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', String(b === btn));
+    }
+    show('authorOpts', mode === 'author');
+    show('matrixOpts', mode === 'matrix');
+  });
+
+  // ---------- generate from a url ----------
+  $('genBtn').addEventListener('click', () => {
+    const url = $('siteUrl').value.trim();
+    const out = $('genOut');
+    if (!/^https?:\/\//.test(url)) {
+      out.innerHTML = '<span class="err">Enter a http(s) URL to test.</span>';
+      return;
+    }
+    const dir = $('genDir').value.trim() || '.';
+    const btn = $('genBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    out.innerHTML = '';
+    setStatus(mode === 'author' ? 'authoring' : 'planning matrix', 'busy');
+    log(mode + ': ' + url);
+
+    const qs =
+      'url=' + encodeURIComponent(url) +
+      '&dir=' + encodeURIComponent(dir) +
+      '&configPath=' + encodeURIComponent(cfgPath()) +
+      (mode === 'author'
+        ? '&pages=' + $('genPages').value + '&count=' + $('genCount').value
+        : '&limit=' + $('genLimit').value);
+
+    const src = new EventSource('/api/' + mode + '/stream?' + qs);
+    const finish = () => {
+      src.close();
+      btn.disabled = false;
+      btn.textContent = 'Generate tests';
+    };
+
+    src.addEventListener('phase', (e) => log('  ' + JSON.parse(e.data).phase + '…'));
+
+    src.addEventListener('page', (e) => {
+      const p = JSON.parse(e.data);
+      log('  ' + p.url + ' → ' + p.accepted + ' accepted, ' + p.rejected + ' rejected');
+    });
+
+    src.addEventListener('done', (e) => {
+      const d = JSON.parse(e.data);
+      const folder = d.written[0] ? d.written[0].split('/')[0] : null;
+      const rejected = Array.isArray(d.rejected) ? d.rejected.length : 0;
+      let html = '<span class="ok">Wrote ' + d.written.length + ' test case(s)</span>';
+      if (rejected) html += ' <span class="muted">· ' + rejected + ' rejected by validation</span>';
+      if (d.plan) {
+        const axes = d.plan.axes.map((a) => esc(a.axis) + ' ×' + a.values).join(', ');
+        html += '<div class="ev">result selector <code>' + esc(d.plan.resultSelector) + '</code>' +
+                (axes ? ' · axes: ' + axes : '') + '</div>';
+      }
+      html += '<div class="muted" style="margin-top:.35rem">model: ' + esc(d.model) + '</div>';
+      out.innerHTML = html;
+
+      if (folder) {
+        // Point the runner at what was just produced, so the next click works.
+        $('testsDir').value = dir === '.' ? folder : dir + '/' + folder;
+        loadTests();
+      }
+      setStatus(d.written.length + ' generated', 'pass');
+      log('generation done.');
+      finish();
+    });
+
+    src.addEventListener('error', (e) => {
+      let msg = 'stream failed';
+      try { if (e.data) msg = JSON.parse(e.data).message; } catch (_) {}
+      out.innerHTML = '<span class="err">' + esc(msg) + '</span>';
+      setStatus('generation failed', 'fail');
+      finish();
+    });
+  });
+
+  // ---------- config & tests ----------
+  $('loadConfigBtn').addEventListener('click', async () => {
+    const box = $('configChips');
+    box.innerHTML = '<span class="chip">loading…</span>';
+    try {
+      const r = await fetch('/api/config?path=' + encodeURIComponent(cfgPath()));
+      const cfg = await r.json();
+      if (!r.ok) throw new Error(cfg.error || 'failed');
+      box.innerHTML =
+        '<span class="chip"><b>' + esc(cfg.name) + '</b></span>' +
+        cfg.runners.map((x) => '<span class="chip"><b>' + esc(x.name) + '</b> · ' + esc(x.type) + '</span>').join('');
+    } catch (err) {
+      box.innerHTML = '<span class="chip err">' + esc(err.message) + '</span>';
+    }
+  });
+
+  async function loadTests() {
+    const list = $('fileList');
+    list.innerHTML = '<li><button disabled>loading…</button></li>';
+    try {
+      const r = await fetch('/api/tests?dir=' + encodeURIComponent(testsDir()));
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'failed');
+      list.innerHTML = data.files.length
+        ? data.files.map((f) => '<li><button data-file="' + esc(f) + '">' + esc(f) + '</button></li>').join('')
+        : '<li><button disabled>no *.test-case.json here</button></li>';
+    } catch (err) {
+      list.innerHTML = '<li><button disabled class="err">' + esc(err.message) + '</button></li>';
+    }
+  }
+  $('loadTestsBtn').addEventListener('click', loadTests);
+
+  // ---------- run ----------
+  $('runBtn').addEventListener('click', () => {
+    const btn = $('runBtn');
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    $('log').textContent = '';
+    $('results').innerHTML = '';
+    $('stats').innerHTML = '';
+    $('triage').innerHTML = '';
+    $('triageCounts').innerHTML = '';
+    show('resultsPanel', false);
+    show('triagePanel', false);
+    setStatus('running', 'busy');
+
+    const wantsTriage = $('triageToggle').checked;
+    const src = new EventSource(
+      '/api/run/stream?configPath=' + encodeURIComponent(cfgPath()) +
+      '&testsDir=' + encodeURIComponent(testsDir()) +
+      '&concurrency=' + $('conc').value +
+      (wantsTriage ? '&triage=1' : ''),
+    );
+    const finish = () => {
+      src.close();
+      btn.disabled = false;
+      btn.textContent = 'Run tests';
+    };
+
+    src.addEventListener('progress', (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'test:end' && ev.result) {
+        log('  ' + ev.result.status.toUpperCase() + '  ' + ev.result.testCaseName +
+            ' (' + ev.result.durationMs + 'ms)');
       }
     });
 
-    $('loadTestsBtn').addEventListener('click', async () => {
-      const box = $('tests');
-      box.innerHTML = '<span class="muted">Loading…</span>';
-      try {
-        const res = await fetch(`/api/tests?dir=${encodeURIComponent(testsDir())}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        box.innerHTML = data.files.length
-          ? `<ul class="tests">${data.files.map((f) => `<li><a data-file="${f}">${f}</a></li>`).join('')}</ul>`
-          : '<div class="muted" style="margin-top:0.5rem">No test files found</div>';
-      } catch (err) {
-        box.innerHTML = `<div class="err">Error: ${err.message}</div>`;
+    src.addEventListener('summary', (e) => {
+      const s = JSON.parse(e.data);
+      $('resultsTech').textContent = s.durationMs + 'ms · ' + $('conc').value + ' parallel';
+      $('stats').innerHTML =
+        '<div class="stat"><div class="n">' + s.total + '</div><div class="k">total</div></div>' +
+        '<div class="stat pass"><div class="n">' + s.passed + '</div><div class="k">passed</div></div>' +
+        '<div class="stat fail"><div class="n">' + s.failed + '</div><div class="k">failed</div></div>' +
+        '<div class="stat flaky"><div class="n">' + s.flaky + '</div><div class="k">flaky</div></div>';
+      $('results').innerHTML = s.results.map((r) => {
+        const tick = r.status === 'pass' ? '✓' : r.status === 'flaky' ? '~' : '✕';
+        const first = r.error && r.error.message ? r.error.message.split('\n')[0] : '';
+        return '<div class="rowline"><span class="tick ' + r.status + '">' + tick + '</span>' +
+               '<span class="nm">' + esc(r.testCaseName) + '</span>' +
+               '<span class="t">' + r.durationMs + 'ms</span></div>' +
+               (first ? '<div class="msg">' + esc(first) + '</div>' : '');
+      }).join('');
+      show('resultsPanel', true);
+      setStatus(s.failed ? s.failed + ' failed' : 'all passed', s.failed ? 'fail' : 'pass');
+      if (!wantsTriage || s.failed === 0) { log('done.'); finish(); }
+    });
+
+    src.addEventListener('triage:start', (e) => {
+      const count = JSON.parse(e.data).count;
+      show('triagePanel', true);
+      $('triageCounts').innerHTML = '<span class="chip">judging ' + count + ' failure(s)…</span>';
+      setStatus('triaging', 'busy');
+      log('triaging ' + count + ' failure(s)…');
+    });
+
+    src.addEventListener('triage', (e) => {
+      const t = JSON.parse(e.data);
+      const ev = t.evidence || {};
+      const bits = [];
+      if (typeof ev.targetCount === 'number') bits.push('selector matched <code>' + ev.targetCount + '</code>');
+      if (Array.isArray(ev.similarSelectors) && ev.similarSelectors.length) {
+        bits.push('page has <code>' + ev.similarSelectors.map(esc).join('</code> <code>') + '</code>');
       }
+      if (ev.excerpt) bits.push('“' + esc(String(ev.excerpt).slice(0, 90)) + '”');
+      const shot = ev.screenshot
+        ? '<details class="shot"><summary>screenshot</summary><img loading="lazy" ' +
+          'alt="the page when the step failed" src="/api/artifact?path=' +
+          encodeURIComponent(ev.screenshot) + '" /></details>'
+        : '';
+      $('triage').insertAdjacentHTML('beforeend',
+        '<div class="tri"><span class="verdict ' + esc(t.verdict) + '">' + esc(t.verdict) + '</span><div class="b">' +
+          '<div class="who">' + esc(t.testCaseName || t.testCaseId) + '</div>' +
+          '<div class="why">' + esc(t.reason) + '</div>' +
+          (t.suggestion ? '<div class="fix">→ ' + esc(t.suggestion) + '</div>' : '') +
+          (bits.length ? '<div class="ev">' + bits.join(' · ') + '</div>' : '') +
+          shot +
+          '<div class="meta' + (t.confidence === 'low' ? ' low' : '') + '">' +
+            esc(t.confidence) + ' confidence · decided by ' + esc(t.source) + '</div>' +
+        '</div></div>');
+      log('  [' + t.verdict + '] ' + (t.testCaseName || t.testCaseId));
     });
 
-    let source = null;
-
-    $('runBtn').addEventListener('click', () => {
-      const runBtn = $('runBtn');
-      const log = $('log');
-      const results = $('results');
-      runBtn.disabled = true;
-      runBtn.textContent = 'Running…';
-      log.textContent = '';
-      results.innerHTML = '';
-      $('triage').innerHTML = '';
-      $('triageCounts').innerHTML = '';
-      $('logCard').style.display = 'block';
-      $('resultsCard').style.display = 'none';
-      $('triageCard').style.display = 'none';
-
-      const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
-        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-
-      const append = (line) => {
-        log.textContent += line + '\n';
-        log.scrollTop = log.scrollHeight;
-      };
-
-      const finish = () => {
-        if (source) { source.close(); source = null; }
-        runBtn.disabled = false;
-        runBtn.textContent = 'Run';
-      };
-
-      const wantsTriage = $('triageToggle').checked;
-      const url = `/api/run/stream?configPath=${encodeURIComponent(cfgPath())}`
-        + `&testsDir=${encodeURIComponent(testsDir())}`
-        + (wantsTriage ? '&triage=1' : '');
-      source = new EventSource(url);
-
-      source.addEventListener('progress', (e) => {
-        const ev = JSON.parse(e.data);
-        if (ev.type === 'test:end' && ev.result) {
-          append(`  ↳ ${ev.result.testCaseName} — ${ev.result.status} (${ev.result.durationMs}ms)`);
-        } else {
-          append(ev.type);
-        }
-      });
-
-      source.addEventListener('summary', (e) => {
-        const s = JSON.parse(e.data);
-        const label = s.status.toUpperCase();
-        let html = `<div class="summary"><span class="badge ${s.status}">${label}</span> &nbsp; ${s.passed} passed, ${s.failed} failed, ${s.flaky} flaky (${s.durationMs}ms)</div>`;
-        for (const r of s.results) {
-          html += `<div class="result-row"><span class="badge ${r.status}">${r.status.toUpperCase()}</span><span class="name">${r.testCaseName}</span><span class="dur">${r.durationMs}ms</span></div>`;
-          if (r.error && r.error.message) {
-            html += `<div class="err">${r.error.message}</div>`;
-          }
-        }
-        results.innerHTML = html;
-        $('resultsCard').style.display = 'block';
-        // With triage on, the stream stays open until the verdicts are in.
-        if (!wantsTriage || s.failed === 0) {
-          append('done.');
-          finish();
-        }
-      });
-
-      source.addEventListener('triage:start', (e) => {
-        const { count } = JSON.parse(e.data);
-        $('triageCard').style.display = 'block';
-        $('triageCounts').innerHTML =
-          `<span class="muted">Judging ${count} failure${count === 1 ? '' : 's'}…</span>`;
-        append(`triaging ${count} failure(s)…`);
-      });
-
-      source.addEventListener('triage', (e) => {
-        const t = JSON.parse(e.data);
-        const ev = t.evidence || {};
-        const bits = [];
-        if (typeof ev.targetCount === 'number') {
-          bits.push(`selector matched <code>${ev.targetCount}</code>`);
-        }
-        if (Array.isArray(ev.similarSelectors) && ev.similarSelectors.length) {
-          bits.push(`page has <code>${ev.similarSelectors.map(esc).join('</code> <code>')}</code>`);
-        }
-        if (ev.excerpt) bits.push(`“${esc(String(ev.excerpt).slice(0, 90))}”`);
-
-        const shot = ev.screenshot
-          ? `<details class="shot"><summary>screenshot</summary>`
-            + `<img loading="lazy" alt="the page when the step failed" `
-            + `src="/api/artifact?path=${encodeURIComponent(ev.screenshot)}" /></details>`
-          : '';
-
-        $('triage').insertAdjacentHTML('beforeend',
-          `<div class="triage-row">`
-          + `<span class="verdict ${t.verdict}">${t.verdict}</span>`
-          + `<div class="body">`
-          +   `<div class="who">${esc(t.testCaseName || t.testCaseId)}</div>`
-          +   `<div class="why">${esc(t.reason)}</div>`
-          +   (t.suggestion ? `<div class="fix">→ ${esc(t.suggestion)}</div>` : '')
-          +   (bits.length ? `<div class="evidence">${bits.join(' · ')}</div>` : '')
-          +   shot
-          +   `<div class="meta${t.confidence === 'low' ? ' low' : ''}">`
-          +     `${t.confidence} confidence · decided by ${t.source}</div>`
-          + `</div></div>`);
-        append(`  [${t.verdict}] ${t.testCaseName || t.testCaseId}`);
-      });
-
-      source.addEventListener('triage:done', (e) => {
-        const d = JSON.parse(e.data);
-        const chips = Object.entries(d.byVerdict)
-          .sort((a, b) => b[1] - a[1])
-          .map(([v, n]) => `<span class="verdict ${v}">${v} · ${n}</span>`)
-          .join('');
-        $('triageCounts').innerHTML =
-          `${chips}<span class="chip">${d.byRule} by rule · ${d.byModel} by model</span>`;
-        append('done.');
-        finish();
-      });
-
-      source.addEventListener('error', (e) => {
-        let msg = 'stream error';
-        try { if (e.data) msg = JSON.parse(e.data).message; } catch (_) {}
-        results.innerHTML = `<div class="err">Error: ${msg}</div>`;
-        $('resultsCard').style.display = 'block';
-        finish();
-      });
-    });
-    // ---- test-case editor ----
-    let editingFile = null;
-
-    $('tests').addEventListener('click', async (e) => {
-      const link = e.target.closest('a[data-file]');
-      if (!link) return;
-      e.preventDefault();
-      const file = link.dataset.file;
-      const status = $('editorStatus');
-      status.innerHTML = '';
-      try {
-        const res = await fetch(`/api/testcase?dir=${encodeURIComponent(testsDir())}&file=${encodeURIComponent(file)}`);
-        if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
-        const data = await res.json();
-        editingFile = data.file;
-        $('editorFile').textContent = data.file;
-        $('editorText').value = data.content.trimEnd();
-        $('editorCard').style.display = 'block';
-        $('editorCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } catch (err) {
-        status.innerHTML = `<div class="err">${err.message}</div>`;
-      }
+    src.addEventListener('triage:done', (e) => {
+      const d = JSON.parse(e.data);
+      $('triageTech').textContent = d.byRule + ' by rule · ' + d.byModel + ' by model';
+      $('triageCounts').innerHTML = Object.entries(d.byVerdict)
+        .sort((a, b) => b[1] - a[1])
+        .map(([v, n]) => '<span class="verdict ' + esc(v) + '">' + esc(v) + ' · ' + n + '</span>')
+        .join('');
+      log('done.');
+      finish();
     });
 
-    $('saveBtn').addEventListener('click', async () => {
-      if (!editingFile) return;
-      const btn = $('saveBtn');
-      const status = $('editorStatus');
-      btn.disabled = true;
-      status.innerHTML = '<span class="muted">Saving…</span>';
-      try {
-        const res = await fetch('/api/testcase', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dir: testsDir(), file: editingFile, content: $('editorText').value }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        status.innerHTML = '<span class="ok">Saved and validated ✓</span>';
-      } catch (err) {
-        status.innerHTML = `<div class="err">${err.message}</div>`;
-      } finally {
-        btn.disabled = false;
-      }
+    src.addEventListener('error', (e) => {
+      let msg = 'stream failed';
+      try { if (e.data) msg = JSON.parse(e.data).message; } catch (_) {}
+      log('error: ' + msg);
+      setStatus('run failed', 'fail');
+      finish();
     });
-  </script>
+  });
+
+  // ---------- test-case editor ----------
+  let editingFile = null;
+
+  $('fileList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-file]');
+    if (!btn || btn.disabled) return;
+    const file = btn.dataset.file;
+    try {
+      const r = await fetch('/api/testcase?dir=' + encodeURIComponent(testsDir()) +
+                            '&file=' + encodeURIComponent(file));
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'failed');
+      editingFile = file;
+      $('editorFile').textContent = file;
+      $('editorText').value = data.content;
+      $('editorStatus').textContent = '';
+      show('editorPanel', true);
+      $('editorPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      $('editorStatus').innerHTML = '<span class="err">' + esc(err.message) + '</span>';
+    }
+  });
+
+  $('saveBtn').addEventListener('click', async () => {
+    if (!editingFile) return;
+    const status = $('editorStatus');
+    status.innerHTML = '<span class="muted">saving…</span>';
+    try {
+      const r = await fetch('/api/testcase', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dir: testsDir(), file: editingFile, content: $('editorText').value }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'failed');
+      status.innerHTML = '<span class="ok">saved and validated ✓</span>';
+    } catch (err) {
+      status.innerHTML = '<span class="err">' + esc(err.message) + '</span>';
+    }
+  });
+</script>
 </body>
 </html>

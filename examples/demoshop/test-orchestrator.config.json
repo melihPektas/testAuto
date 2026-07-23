@@ -8,8 +8,6 @@
     }
   ],
   "llm": {
-    "baseUrl": "http://localhost:11434/v1",
-    "model": "qwen2.5-coder:14b",
     "roles": {
       "triage": {
         "model": "qwen2.5-coder:14b"

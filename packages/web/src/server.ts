@@ -3,7 +3,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { failuresFromReport, llmOptionsFor, triageFailures } from '@test-orchestrator/agent';
+import {
+  authorSite,
+  failuresFromReport,
+  llmOptionsFor,
+  matrixSite,
+  triageFailures,
+  writeAuthored,
+} from '@test-orchestrator/agent';
 import { browserRunnerFactory } from '@test-orchestrator/browser';
 import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
@@ -192,6 +199,7 @@ async function handleRunStream(
   configPath: string,
   testsDir: string,
   triage: boolean,
+  concurrency: number,
 ): Promise<void> {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -216,6 +224,10 @@ async function handleRunStream(
       testCases: testCases as unknown as RunOptions['testCases'],
       runners,
       reporters: [streamer],
+      concurrency,
+      // Each lane needs its own browser; sharing one page across tests does not
+      // fail loudly, it fails confusingly.
+      createRunners: () => buildRunnerRegistry(config.runners, { browser: browserRunnerFactory }),
     });
     send('summary', summary);
 
@@ -258,6 +270,113 @@ async function handleRunStream(
   }
 }
 
+/** Open an SSE response and hand back a typed `send`. */
+function openStream(res: ServerResponse): (event: string, data: unknown) => void {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+  return (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+}
+
+async function readLlmConfig(configPath: string): Promise<LlmConfig | undefined> {
+  try {
+    return (JSON.parse(await readFile(configPath, 'utf8')) as WebConfig).llm;
+  } catch {
+    return undefined;
+  }
+}
+
+interface GenerateParams {
+  url: string;
+  dir: string;
+  pages: number;
+  count: number;
+  limit: number;
+  configPath: string;
+}
+
+async function handleAuthorStream(res: ServerResponse, p: GenerateParams): Promise<void> {
+  const send = openStream(res);
+  try {
+    send('phase', { phase: 'exploring', url: p.url });
+    const llm = llmOptionsFor('author', await readLlmConfig(p.configPath));
+    const site = await authorSite(p.url, {
+      ...llm,
+      maxPages: p.pages,
+      count: p.count,
+      onPage: (pageUrl, accepted, rejected) => {
+        send('page', { url: pageUrl, accepted, rejected });
+      },
+    });
+    const written = await writeAuthored(p.dir, site.cases);
+    send('done', {
+      model: site.model,
+      pagesVisited: site.pagesVisited,
+      written,
+      cases: site.cases.map((c) => ({ path: c.path, name: c.name, steps: c.steps })),
+      rejected: site.rejected,
+    });
+  } catch (err) {
+    send('error', { message: (err as Error).message });
+  } finally {
+    res.end();
+  }
+}
+
+async function handleMatrixStream(res: ServerResponse, p: GenerateParams): Promise<void> {
+  const send = openStream(res);
+  try {
+    send('phase', { phase: 'exploring', url: p.url });
+    const llm = llmOptionsFor('matrix', await readLlmConfig(p.configPath));
+    send('phase', { phase: 'planning', url: p.url });
+    const result = await matrixSite(p.url, { ...llm, limit: p.limit });
+    if (result.plan === undefined) {
+      send('error', { message: result.rejected.join('; ') || 'no usable matrix plan' });
+      return;
+    }
+    const written = await writeAuthored(p.dir, result.cases);
+    send('done', {
+      model: result.model,
+      plan: {
+        resultSelector: result.plan.resultSelector,
+        terms: result.plan.search?.terms.length ?? 0,
+        axes: result.plan.filters.map((f) => ({ axis: f.axis, values: f.values.length })),
+      },
+      written,
+      cases: result.cases
+        .slice(0, 200)
+        .map((c) => ({ path: c.path, name: c.name, steps: c.steps })),
+      rejected: result.rejected,
+    });
+  } catch (err) {
+    send('error', { message: (err as Error).message });
+  } finally {
+    res.end();
+  }
+}
+
+function generateParams(url: URL): GenerateParams {
+  const num = (key: string, fallback: number): number => {
+    const parsed = Number.parseInt(url.searchParams.get(key) ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  return {
+    url: url.searchParams.get('url') ?? '',
+    dir: resolve(process.cwd(), url.searchParams.get('dir') ?? '.'),
+    pages: num('pages', 3),
+    count: num('count', 3),
+    limit: num('limit', 500),
+    configPath: resolve(
+      process.cwd(),
+      url.searchParams.get('configPath') ?? 'test-orchestrator.config.json',
+    ),
+  };
+}
+
 export function createDashboardServer(): ReturnType<typeof createServer> {
   return createServer((req, res) => {
     void (async (): Promise<void> => {
@@ -294,7 +413,28 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
             configPath: url.searchParams.get('configPath') ?? undefined,
             testsDir: url.searchParams.get('testsDir') ?? undefined,
           });
-          await handleRunStream(res, configPath, testsDir, url.searchParams.get('triage') === '1');
+          const parallel = Number.parseInt(url.searchParams.get('concurrency') ?? '', 10);
+          await handleRunStream(
+            res,
+            configPath,
+            testsDir,
+            url.searchParams.get('triage') === '1',
+            Number.isFinite(parallel) && parallel > 0 ? parallel : 1,
+          );
+          return;
+        }
+        if (
+          req.method === 'GET' &&
+          (url.pathname === '/api/author/stream' || url.pathname === '/api/matrix/stream')
+        ) {
+          const params = generateParams(url);
+          if (!/^https?:\/\//.test(params.url)) {
+            sendJson(res, 400, { error: 'a http(s) url is required' });
+            return;
+          }
+          await (url.pathname === '/api/author/stream'
+            ? handleAuthorStream(res, params)
+            : handleMatrixStream(res, params));
           return;
         }
         if (req.method === 'GET' && url.pathname === '/api/artifact') {

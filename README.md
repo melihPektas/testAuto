@@ -83,8 +83,8 @@ DOM dispose.
   `export`, `report`, `plugin`.
 - **MCP server** — `list_tests`, `run_tests`, `generate_tests`, `test_url`,
   `explore_site`, `author_tests`, `triage_failures`, `ingest_project`.
-- **Web dashboard** — browse test cases, edit them, run them, watch results
-  stream live over Server-Sent Events.
+- **Web dashboard** — point it at a URL and it generates tests, runs them in
+  parallel, and streams verdicts and failure screenshots back live.
 - **CSV export** — hand the inventory to a QA team or a test-management tool.
 - **Schema** — JSON Schema (draft 2020-12) + AJV validators for config and test
   cases.
@@ -346,6 +346,15 @@ test files, and neither belongs behind a tool call an agent can make casually.
 # from a directory containing test-orchestrator.config.json + *.test-case.json
 PORT=4600 node packages/web/dist/server.js   # open http://localhost:4600
 ```
+
+The whole loop without touching a terminal: put a URL in **Generate from a URL**,
+pick scenarios or a combination matrix, and the generated cases are written and
+the runner is pointed at them. **Run tests** executes them in parallel and, with
+triage on, streams a verdict per failure — with the evidence and the screenshot
+behind it.
+
+Generation and triage both stream. Each judged failure costs the model tens of
+seconds, and a dashboard that sits silent for a minute reads as hung.
 
 ## 🧩 Config & test-case format
 
