@@ -7,6 +7,7 @@ import {
   changesetFromGithub,
   changesetFromGitlab,
   changesetFromNumstat,
+  fetchChangeset,
   describeProvider,
   llmOptionsFor,
   failuresFromReport,
@@ -78,6 +79,10 @@ async function readStdin(): Promise<string> {
 
 /** Assemble a changeset from whichever input flag was given. */
 async function readChangeset(opts: Record<string, unknown>): Promise<Changeset> {
+  if (typeof opts['mr'] === 'string') {
+    // Fetch the diff straight from the MR/PR — the middle link of the chain.
+    return fetchChangeset(opts['mr']);
+  }
   if (opts['diff'] === true) {
     return changesetFromNumstat(await readStdin());
   }
@@ -421,6 +426,10 @@ export function registerCommands(program: Command): void {
     .command('review')
     .description(
       'Review a change: decide if it is backend, UI or both, and test accordingly against a running environment',
+    )
+    .option(
+      '--mr <url>',
+      'fetch the diff from a GitLab MR or GitHub PR url (uses GITLAB_TOKEN/GITHUB_TOKEN)',
     )
     .option('--diff', 'read changed files from `git diff --numstat` on stdin')
     .option('--gitlab <file>', 'a GitLab merge-request changes payload (JSON file)')

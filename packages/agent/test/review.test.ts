@@ -6,6 +6,7 @@ import {
   changesetFromGithub,
   changesetFromGitlab,
   changesetFromNumstat,
+  fetchChangeset,
   jiraTrigger,
 } from '../src/changeset.js';
 import {
@@ -240,5 +241,79 @@ describe('review report', () => {
     );
     expect(report.ok).toBe(false);
     expect(reviewReportToMarkdown(report)).toContain('skipped: no --url given');
+  });
+});
+
+describe('fetchChangeset', () => {
+  /** A fetch stub that records the url and headers it was called with. */
+  function stub(status: number, body: unknown) {
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const impl = ((url: string, init?: { headers?: Record<string, string> }) => {
+      calls.push({ url, headers: init?.headers ?? {} });
+      return Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve(body),
+      } as Response);
+    }) as unknown as typeof fetch;
+    return { impl, calls };
+  }
+
+  it('derives the GitLab changes endpoint and sends the token as a header', async () => {
+    const { impl, calls } = stub(200, {
+      title: 'fix cart',
+      changes: [{ new_path: 'api/routes/cart.ts', old_path: 'api/routes/cart.ts' }],
+    });
+    const cs = await fetchChangeset(
+      'https://gitlab.com/acme/shop/-/merge_requests/17',
+      { gitlabToken: 'glpat-secret' },
+      {} as NodeJS.ProcessEnv,
+      impl,
+    );
+    expect(cs.files.map((f) => f.path)).toEqual(['api/routes/cart.ts']);
+    expect(calls[0]?.url).toBe(
+      'https://gitlab.com/api/v4/projects/acme%2Fshop/merge_requests/17/changes',
+    );
+    expect(calls[0]?.headers['private-token']).toBe('glpat-secret');
+  });
+
+  it('derives the GitHub files endpoint', async () => {
+    const { impl, calls } = stub(200, [{ filename: 'src/App.tsx', status: 'modified' }]);
+    const cs = await fetchChangeset(
+      'https://github.com/acme/shop/pull/9',
+      { githubToken: 'ghp-secret' },
+      {} as NodeJS.ProcessEnv,
+      impl,
+    );
+    expect(cs.files.map((f) => f.path)).toEqual(['src/App.tsx']);
+    expect(calls[0]?.url).toBe('https://api.github.com/repos/acme/shop/pulls/9/files');
+    expect(calls[0]?.headers['authorization']).toBe('Bearer ghp-secret');
+  });
+
+  it('reads the token from the environment when not passed', async () => {
+    const { impl, calls } = stub(200, { changes: [] });
+    await fetchChangeset(
+      'https://gitlab.com/a/b/-/merge_requests/1',
+      {},
+      { GITLAB_TOKEN: 'from-env' } as NodeJS.ProcessEnv,
+      impl,
+    );
+    expect(calls[0]?.headers['private-token']).toBe('from-env');
+  });
+
+  it('throws on an unrecognised url', async () => {
+    await expect(fetchChangeset('https://example.com/whatever')).rejects.toThrow('unrecognised');
+  });
+
+  it('surfaces an API error', async () => {
+    const { impl } = stub(404, {});
+    await expect(
+      fetchChangeset(
+        'https://gitlab.com/a/b/-/merge_requests/1',
+        {},
+        {} as NodeJS.ProcessEnv,
+        impl,
+      ),
+    ).rejects.toThrow('HTTP 404');
   });
 });

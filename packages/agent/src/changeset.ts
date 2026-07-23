@@ -136,3 +136,63 @@ export function jiraTrigger(payload: unknown): JiraTrigger {
     links: [...links],
   };
 }
+
+export interface FetchOptions {
+  /** GitLab private token, or the name is read from GITLAB_TOKEN. */
+  readonly gitlabToken?: string;
+  /** GitHub token, or read from GITHUB_TOKEN. */
+  readonly githubToken?: string;
+}
+
+/**
+ * Fetch a changeset from a merge-request or pull-request URL. Recognises a
+ * GitLab MR (`/-/merge_requests/N`) and a GitHub PR (`/pull/N`), derives the
+ * API endpoint from the web URL, and returns the normalised changeset. This is
+ * the middle link of the Jira → MR → plan chain.
+ *
+ * The token is read from the environment by default and only ever sent as a
+ * request header — never logged, never returned.
+ *
+ * @public
+ */
+export async function fetchChangeset(
+  url: string,
+  options: FetchOptions = {},
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Changeset> {
+  const gitlab = /^(https?:\/\/[^/]+)\/(.+)\/-\/merge_requests\/(\d+)/.exec(url);
+  if (gitlab !== null) {
+    const [, origin, projectPath, iid] = gitlab;
+    const token = options.gitlabToken ?? env['GITLAB_TOKEN'];
+    const api = `${origin ?? ''}/api/v4/projects/${encodeURIComponent(projectPath ?? '')}/merge_requests/${iid ?? ''}/changes`;
+    const response = await fetchImpl(api, {
+      headers: token === undefined ? {} : { 'private-token': token },
+    });
+    if (!response.ok) {
+      throw new Error(`GitLab returned HTTP ${String(response.status)} for ${api}`);
+    }
+    return changesetFromGitlab(await response.json());
+  }
+
+  const github = /^(https?:\/\/)(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url);
+  if (github !== null) {
+    const [, , owner, repo, number] = github;
+    const token = options.githubToken ?? env['GITHUB_TOKEN'];
+    const api = `https://api.github.com/repos/${owner ?? ''}/${repo ?? ''}/pulls/${number ?? ''}/files`;
+    const response = await fetchImpl(api, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub returned HTTP ${String(response.status)} for ${api}`);
+    }
+    return changesetFromGithub(await response.json());
+  }
+
+  throw new Error(
+    'unrecognised MR/PR url; expected a GitLab merge request or a GitHub pull request',
+  );
+}

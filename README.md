@@ -372,6 +372,18 @@ run is not a pass: it proved nothing, and the report says so.
 
 ### As a webhook
 
+`review --mr <url>` closes the middle of the chain: give it a GitLab MR or GitHub
+PR url and it fetches the diff from the API (token from `GITLAB_TOKEN` or
+`GITHUB_TOKEN`, sent as a header, never logged), then plans and tests as above.
+
+```bash
+export GITLAB_TOKEN=glpat-...
+node packages/cli/bin/test-orchestrator.js review \
+  --mr https://gitlab.com/acme/shop/-/merge_requests/17 \
+  --url https://review-app.example.com --spec https://review-app.example.com/openapi.json \
+  --report review.md
+```
+
 The dashboard's `POST /api/review` takes the same payloads. A Jira webhook
 carries no diff — only a link — so it comes back with the issue and its links
 for a follow-up call; a GitLab or GitHub payload that already lists the changed
