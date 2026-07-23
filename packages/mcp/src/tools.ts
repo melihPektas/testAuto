@@ -110,18 +110,20 @@ export async function ingestProjectTool(dir: string): Promise<{
   };
 }
 
+export interface ExploreToolResult {
+  readonly origin: string;
+  readonly pagesVisited: number;
+  readonly pages: { url: string; title: string; links: number; forms: number }[];
+  readonly formsFound: number;
+  readonly generated: number;
+  readonly written: string[];
+}
+
 export async function exploreSiteTool(
   url: string,
   maxPages: number,
   dir: string,
-): Promise<{
-  origin: string;
-  pagesVisited: number;
-  pages: { url: string; title: string; links: number; forms: number }[];
-  formsFound: number;
-  generated: number;
-  written: string[];
-}> {
+): Promise<ExploreToolResult> {
   const map = await exploreSite(url, { maxPages });
   const cases = generateTestsFromExploration(map);
   const base = resolve(process.cwd(), dir);
