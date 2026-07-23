@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { authorTestsForPage, resolveLlm } from '@test-orchestrator/agent';
+import { authorSite, writeAuthored } from '@test-orchestrator/agent';
 import {
   browserRunnerFactory,
   createBrowserRunner,
@@ -166,42 +166,21 @@ export async function authorTestsTool(
   model: string | undefined,
   baseUrl: string | undefined,
 ): Promise<AuthorToolResult> {
-  const map = await exploreSite(url, { maxPages });
-  const base = resolve(process.cwd(), dir);
-  const options = {
+  const site = await authorSite(url, {
     ...(model !== undefined ? { model } : {}),
     ...(baseUrl !== undefined ? { baseUrl } : {}),
+    maxPages,
     count,
-  };
-
-  const written: string[] = [];
-  const cases: { file: string; name: string; steps: number }[] = [];
-  const rejected: { page: string; reason: string }[] = [];
-  let seq = 0;
-
-  for (const page of map.pages) {
-    const result = await authorTestsForPage(page, options);
-    for (const reject of result.rejected) {
-      rejected.push({ page: page.url, reason: reject.reason });
-    }
-    for (const testCase of result.accepted) {
-      seq += 1;
-      const file = `authored/${String(seq).padStart(2, '0')}-${testCase.id}.test-case.json`;
-      const target = join(base, file);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, `${JSON.stringify(testCase, null, 2)}\n`, 'utf8');
-      written.push(file);
-      cases.push({ file, name: testCase.name, steps: testCase.steps.length });
-    }
-  }
+  });
+  const written = await writeAuthored(dir, site.cases);
 
   return {
-    model: resolveLlm(options).model,
-    pagesVisited: map.pages.length,
-    accepted: cases.length,
-    rejected,
+    model: site.model,
+    pagesVisited: site.pagesVisited,
+    accepted: site.cases.length,
+    rejected: site.rejected,
     written,
-    cases,
+    cases: site.cases.map((c) => ({ file: c.path, name: c.name, steps: c.steps })),
   };
 }
 

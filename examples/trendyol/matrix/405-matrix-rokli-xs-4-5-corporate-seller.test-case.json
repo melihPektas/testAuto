@@ -1,0 +1,28 @@
+{
+  "id": "matrix-rokli-xs-4-5-corporate-seller",
+  "version": "1.0",
+  "name": "Results for Rokli + XS + 4.5+ + Corporate Seller",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://www.trendyol.com/sr?wc=56&mb=kurumsal_satici"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".image-overlay-slice",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

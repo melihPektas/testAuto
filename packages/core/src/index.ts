@@ -7,6 +7,7 @@ export * from './runners/index.js';
 export * from './reporters/index.js';
 export * from './generators/index.js';
 export * from './ingest/index.js';
+export * from './export/index.js';
 export * from './plugins/index.js';
 export * from './types.js';
 

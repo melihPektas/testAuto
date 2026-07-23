@@ -1,0 +1,28 @@
+{
+  "id": "matrix-women-kookie-kids",
+  "version": "1.0",
+  "name": "Results for Women + Kookie Kids",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://automationexercise.com/brand_products/Kookie%20Kids"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".productinfo",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

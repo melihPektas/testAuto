@@ -1,0 +1,28 @@
+{
+  "id": "matrix-dresses",
+  "version": "1.0",
+  "name": "Results for Dresses",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://automationexercise.com/category_products/3"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".productinfo",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

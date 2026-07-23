@@ -19,6 +19,7 @@ const page: DiscoveredPage = {
   status: 200,
   links: ['https://shop.test/cart'],
   headings: ['Products'],
+  repeated: [{ selector: '.card', count: 24 }],
   forms: [
     {
       index: 1,

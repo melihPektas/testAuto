@@ -1,0 +1,28 @@
+{
+  "id": "matrix-xs-red-campaign-corporate-seller-discounted-product",
+  "version": "1.0",
+  "name": "Results for XS + Red Campaign + Corporate Seller + Discounted Product",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://www.trendyol.com/sr?wc=56&ds=true"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".image-overlay-slice",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

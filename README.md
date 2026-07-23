@@ -37,7 +37,13 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 - **MCP server** — exposes `run_tests`, `list_tests`, `generate_tests`, `test_url`,
   `explore_site`, `author_tests`, and `ingest_project` as tools an MCP client can call.
 - **Schema** — JSON Schema (draft 2020-12) + AJV validators for config & test cases.
-- **CLI** — `init`, `generate`, `run`, `report`, `plugin`.
+- **Combination matrix** — for a listing page, the model identifies the _axes_
+  (search terms, categories, brands) and the cross-product is expanded locally.
+  One model call yields hundreds of genuinely distinct cases; asking a model for
+  hundreds of cases directly just yields repetition.
+- **CSV export** — hand the generated inventory to a QA team or a test-management
+  tool (`--per-step` for step-level rows).
+- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `export`, `report`, `plugin`.
 - **Web dashboard** — browse test cases, run them, and watch results stream live
   over Server-Sent Events.
 
@@ -110,6 +116,36 @@ from `qwen2.5-coder:14b`.
 
 Accepted scenarios are written to `<dir>/authored/`. Rejected ones are never
 written; they are returned with the reason they failed validation.
+
+### Combination matrix
+
+For a listing or search page, `matrix` asks the model for the page's _axes_
+rather than for test cases, then expands the cross-product locally:
+
+```bash
+node packages/cli/bin/test-orchestrator.js matrix https://example.com/products -l 500
+node packages/cli/bin/test-orchestrator.js run -t matrix
+node packages/cli/bin/test-orchestrator.js export -t matrix -o test-cases.csv
+```
+
+Both halves are grounded in the page that was actually explored: a filter URL
+must appear verbatim in the page's own link list, and the result selector must
+be one of the selectors observed repeating on the page. Invented ones are
+dropped with a reason.
+
+Measured on a real listing page: **500 distinct cases from one model call in
+2m14s.**
+
+### Try it locally
+
+`examples/demoshop` is a two-page app with a login that really does reject bad
+credentials:
+
+```bash
+node examples/demoshop/server.mjs
+cd examples/demoshop && node ../../packages/cli/bin/test-orchestrator.js author http://localhost:4700/ -p 2
+node ../../packages/cli/bin/test-orchestrator.js run -t authored
+```
 
 ## 🧩 Config & test-case format
 

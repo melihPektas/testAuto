@@ -1,0 +1,40 @@
+{
+  "id": "matrix-mast-harbour-jacket",
+  "version": "1.0",
+  "name": "Results for Mast & Harbour + search \"jacket\"",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://automationexercise.com/brand_products/Mast%20&%20Harbour"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "search",
+      "action": "fill",
+      "target": "#search_product",
+      "value": "jacket"
+    },
+    {
+      "id": "submit",
+      "action": "press",
+      "target": "#search_product",
+      "value": "Enter"
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".productinfo",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

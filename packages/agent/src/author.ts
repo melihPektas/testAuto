@@ -19,6 +19,8 @@ export const ALLOWED_ACTIONS = [
   'check',
   'press',
   'waitFor',
+  'expectUrl',
+  'expectMinCount',
   'audit',
 ] as const;
 
@@ -63,6 +65,8 @@ Each step object MUST have an "action" from this list ONLY:
   check           {"action":"check","target":"<css selector>"}
   press           {"action":"press","target":"<css selector>","value":"Enter"}
   waitFor         {"action":"waitFor","target":"<css selector>"}
+  expectUrl       {"action":"expectUrl","value":"<substring the URL must contain>"}
+  expectMinCount  {"action":"expectMinCount","target":"<css selector>","value":<number>}
   audit           {"action":"audit"}
 
 Rules:

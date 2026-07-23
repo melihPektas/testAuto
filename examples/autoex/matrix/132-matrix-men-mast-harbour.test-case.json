@@ -1,0 +1,28 @@
+{
+  "id": "matrix-men-mast-harbour",
+  "version": "1.0",
+  "name": "Results for Men + Mast & Harbour",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://automationexercise.com/brand_products/Mast%20&%20Harbour"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".productinfo",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

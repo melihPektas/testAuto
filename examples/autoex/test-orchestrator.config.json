@@ -1,0 +1,5 @@
+{
+  "version": "1.0",
+  "name": "demoshop",
+  "runners": [{ "name": "ui", "type": "browser" }]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "matrix-men-h-m-shoes",
+  "version": "1.0",
+  "name": "Results for Men + H&M + search \"shoes\"",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://automationexercise.com/brand_products/H&M"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "search",
+      "action": "fill",
+      "target": "#search_product",
+      "value": "shoes"
+    },
+    {
+      "id": "submit",
+      "action": "press",
+      "target": "#search_product",
+      "value": "Enter"
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".productinfo",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ describe('CLI Commands Registration', () => {
   it('should register the correct commands', () => {
     const program = new Command();
     registerCommands(program);
-    
+
     const commandNames = program.commands.map((c) => c.name());
     expect(commandNames).toContain('init');
     expect(commandNames).toContain('generate');
@@ -16,9 +16,20 @@ describe('CLI Commands Registration', () => {
     expect(commandNames).toContain('plugin');
   });
 
-  it('should have exactly 5 registered commands', () => {
+  it('registers exactly the commands we document', () => {
     const program = new Command();
     registerCommands(program);
-    expect(program.commands.length).toBe(5);
+    // Asserting the set rather than a count, so adding a command fails here
+    // with the name that changed instead of an unhelpful number.
+    expect(program.commands.map((c) => c.name()).sort()).toEqual([
+      'author',
+      'export',
+      'generate',
+      'init',
+      'matrix',
+      'plugin',
+      'report',
+      'run',
+    ]);
   });
 });

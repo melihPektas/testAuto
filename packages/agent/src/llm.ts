@@ -7,6 +7,12 @@ export interface LlmOptions {
   readonly apiKey?: string;
   readonly timeoutMs?: number;
   readonly temperature?: number;
+  /**
+   * Ask the endpoint to constrain the reply to a JSON object. Models drift into
+   * prose when the page content is chatty or not in English; this stops that at
+   * the source rather than hoping the prompt holds.
+   */
+  readonly json?: boolean;
 }
 
 export interface ResolvedLlm {
@@ -72,6 +78,7 @@ export async function chat(
         model: llm.model,
         temperature: llm.temperature,
         stream: false,
+        ...(options.json === true ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },

@@ -133,6 +133,27 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         await page.waitForSelector(selector, { timeout });
         return { output: `"${selector}" appeared` };
       }
+      case 'expectUrl': {
+        // Filter and sort controls are usually reflected in the query string,
+        // so this is what proves a filter was actually applied.
+        const needle = text(value);
+        const current = page.url();
+        if (!current.includes(needle)) {
+          throw new Error(`url "${current}" does not contain "${needle}"`);
+        }
+        return { output: `url contains "${needle}"` };
+      }
+      case 'expectMinCount': {
+        const selector = String(target ?? '');
+        const min = Number(value ?? 1);
+        const count = await page.locator(selector).count();
+        if (count < min) {
+          throw new Error(
+            `expected at least ${String(min)} element(s) matching "${selector}" but found ${String(count)}`,
+          );
+        }
+        return { output: `${String(count)} element(s) match "${selector}"` };
+      }
       case 'expectNoConsoleErrors': {
         if (consoleErrors.length > 0) {
           throw new Error(
@@ -142,8 +163,9 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         return { output: 'no console errors' };
       }
       case 'expectNoBrokenImages': {
-        const broken = await page.$$eval('img', (imgs) =>
-          imgs.filter((img) => img.complete && img.naturalWidth === 0).length,
+        const broken = await page.$$eval(
+          'img',
+          (imgs) => imgs.filter((img) => img.complete && img.naturalWidth === 0).length,
         );
         if (broken > 0) {
           throw new Error(`${String(broken)} broken image(s)`);
@@ -182,7 +204,11 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         const checks: { name: string; ok: boolean; detail: string }[] = [];
 
         const title = await page.title();
-        checks.push({ name: 'title', ok: title.length > 0, detail: title.length > 0 ? title : '(empty)' });
+        checks.push({
+          name: 'title',
+          ok: title.length > 0,
+          detail: title.length > 0 ? title : '(empty)',
+        });
 
         const hasBody = (await page.$('body')) !== null;
         checks.push({ name: 'body', ok: hasBody, detail: hasBody ? 'rendered' : 'missing' });
@@ -230,9 +256,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
           detail: overflow <= 4 ? 'no overflow @375px' : `${String(overflow)}px overflow @375px`,
         });
 
-        const report = checks
-          .map((c) => `${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`)
-          .join('\n');
+        const report = checks.map((c) => `${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`).join('\n');
         const failed = checks.filter((c) => !c.ok);
         if (failed.length > 0) {
           throw new Error(`${String(failed.length)} audit check(s) failed:\n${report}`);

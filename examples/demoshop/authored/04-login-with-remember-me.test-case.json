@@ -1,0 +1,44 @@
+{
+  "id": "login-with-remember-me",
+  "version": "1.0",
+  "name": "User logs in with remember me option selected",
+  "steps": [
+    {
+      "action": "goto",
+      "value": "http://localhost:4700/login"
+    },
+    {
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "action": "fill",
+      "target": "input[name='email']",
+      "value": "user@example.com"
+    },
+    {
+      "action": "fill",
+      "target": "input[name='password']",
+      "value": "securePassword123"
+    },
+    {
+      "action": "check",
+      "target": "input[name='remember']"
+    },
+    {
+      "action": "click",
+      "target": "button[type='submit']"
+    },
+    {
+      "action": "waitFor",
+      "target": ".welcome-message"
+    },
+    {
+      "action": "expectText",
+      "value": "Welcome back, user!"
+    }
+  ],
+  "runner": "ui",
+  "timeout": 30000,
+  "retry": 0
+}

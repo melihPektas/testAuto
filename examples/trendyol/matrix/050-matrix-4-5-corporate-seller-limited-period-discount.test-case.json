@@ -1,0 +1,28 @@
+{
+  "id": "matrix-4-5-corporate-seller-limited-period-discount",
+  "version": "1.0",
+  "name": "Results for 4.5+ + Corporate Seller + Limited Period Discount",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://www.trendyol.com/sr?wc=56&lpd=10"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".image-overlay-slice",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}

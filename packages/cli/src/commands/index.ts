@@ -1,6 +1,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { authorSite, matrixSite, resolveLlm, writeAuthored } from '@test-orchestrator/agent';
 import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
 import {
   executeRun,
@@ -14,6 +15,7 @@ import {
   buildGeneratorRegistry,
   loadPlugins,
   createOchestratorRegistries,
+  testCasesToCsv,
 } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
@@ -22,7 +24,6 @@ import { createLogger } from '../internal/logger.js';
 
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { Command } from 'commander';
-
 
 const logger = createLogger();
 
@@ -94,6 +95,167 @@ export function registerCommands(program: Command): void {
         logger.info(`generated ${summary.count} file(s)`);
       } catch (err) {
         logger.error(`failed to generate: ${(err as Error).message}`);
+      }
+    });
+
+  program
+    .command('author')
+    .description('Explore a URL and have an LLM author validated test cases for it')
+    .argument('<url>', 'the site to explore')
+    .option('-d, --dir <dir>', 'output directory (cases land in <dir>/authored/)', '.')
+    .option('-p, --pages <n>', 'how many same-origin pages to explore', '3')
+    .option('-n, --count <n>', 'scenarios to request per page', '3')
+    .option('-m, --model <model>', 'model id (default: $TEST_ORCHESTRATOR_LLM_MODEL)')
+    .option(
+      '-u, --llm-url <url>',
+      'OpenAI-compatible base URL (default: $TEST_ORCHESTRATOR_LLM_URL)',
+    )
+    .action(async (url: string, opts: Record<string, unknown>) => {
+      const int = (key: string, fallback: number): number => {
+        const raw = opts[key];
+        const parsed = Number.parseInt(typeof raw === 'string' ? raw : '', 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+      };
+      const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
+      const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
+      const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.';
+
+      try {
+        const llm = resolveLlm({
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+        });
+        logger.info(`authoring with ${llm.model} at ${llm.baseUrl}`);
+
+        const site = await authorSite(url, {
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+          maxPages: int('pages', 3),
+          count: int('count', 3),
+          onPage: (pageUrl, accepted, rejected) => {
+            logger.info(
+              `  ${pageUrl} → ${String(accepted)} accepted, ${String(rejected)} rejected`,
+            );
+          },
+        });
+
+        const written = await writeAuthored(dir, site.cases);
+        for (const testCase of site.cases) {
+          logger.info(`  ${testCase.path}  (${String(testCase.steps)} steps)  ${testCase.name}`);
+        }
+        for (const reject of site.rejected) {
+          logger.warn(`  rejected on ${reject.page}: ${reject.reason}`);
+        }
+        logger.info(
+          `explored ${String(site.pagesVisited)} page(s), wrote ${String(written.length)} test case(s), rejected ${String(site.rejected.length)}`,
+        );
+        if (written.length === 0) {
+          process.exitCode = 1;
+        }
+      } catch (err) {
+        logger.error(`failed to author: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('matrix')
+    .description("Plan a listing page's axes with an LLM, then expand the full combination matrix")
+    .argument('<url>', 'the listing/search page to plan from')
+    .option('-d, --dir <dir>', 'output directory (cases land in <dir>/matrix/)', '.')
+    .option('-l, --limit <n>', 'maximum number of cases to generate', '500')
+    .option('-m, --model <model>', 'model id (default: $TEST_ORCHESTRATOR_LLM_MODEL)')
+    .option(
+      '-u, --llm-url <url>',
+      'OpenAI-compatible base URL (default: $TEST_ORCHESTRATOR_LLM_URL)',
+    )
+    .action(async (url: string, opts: Record<string, unknown>) => {
+      const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
+      const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
+      const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.';
+      const rawLimit = opts['limit'];
+      const parsedLimit = Number.parseInt(typeof rawLimit === 'string' ? rawLimit : '', 10);
+
+      try {
+        const result = await matrixSite(url, {
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+          limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 500,
+        });
+
+        for (const reject of result.rejected) {
+          logger.warn(`  ${reject}`);
+        }
+        if (result.plan === undefined) {
+          logger.error('no usable matrix plan for this page');
+          process.exitCode = 1;
+          return;
+        }
+
+        logger.info(`result selector: ${result.plan.resultSelector}`);
+        if (result.plan.search !== undefined) {
+          logger.info(
+            `search axis: ${result.plan.search.input} × ${String(result.plan.search.terms.length)} term(s)`,
+          );
+        }
+        for (const axis of result.plan.filters) {
+          logger.info(`filter axis "${axis.axis}": ${String(axis.values.length)} value(s)`);
+        }
+
+        const written = await writeAuthored(dir, result.cases);
+        logger.info(`wrote ${String(written.length)} test case(s) to ${dir}/matrix/`);
+        if (written.length === 0) {
+          process.exitCode = 1;
+        }
+      } catch (err) {
+        logger.error(`failed to build matrix: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('export')
+    .description('Export discovered test cases as CSV')
+    .option('-t, --tests <dir>', 'directory holding *.test-case.json files', '.')
+    .option('-o, --out <path>', 'output CSV path', 'test-cases.csv')
+    .option('--per-step', 'one row per step instead of one row per test case')
+    .action(async (opts: Record<string, unknown>) => {
+      try {
+        const testsDir = resolve(
+          process.cwd(),
+          typeof opts['tests'] === 'string' ? opts['tests'] : '.',
+        );
+        const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json')).sort();
+        if (files.length === 0) {
+          logger.warn(`no *.test-case.json files found in ${testsDir}`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const testCases = [];
+        for (const file of files) {
+          const parsed: unknown = JSON.parse(await readFile(join(testsDir, file), 'utf8'));
+          const validated = validateTestCase(parsed);
+          if (!validated.ok) {
+            logger.warn(`skipping ${file}: ${formatAjvErrors(validated.errors)}`);
+            continue;
+          }
+          testCases.push(validated.data);
+        }
+
+        const out = resolve(
+          process.cwd(),
+          typeof opts['out'] === 'string' ? opts['out'] : 'test-cases.csv',
+        );
+        await writeFile(
+          out,
+          testCasesToCsv(testCases, { perStep: opts['perStep'] === true }),
+          'utf8',
+        );
+        logger.info(`exported ${String(testCases.length)} test case(s) to ${out}`);
+      } catch (err) {
+        logger.error(`failed to export: ${(err as Error).message}`);
+        process.exitCode = 1;
       }
     });
 
@@ -198,7 +360,10 @@ export function registerCommands(program: Command): void {
     .description('Summarise a JSON report produced by the json reporter')
     .option('-i, --input <path>', 'path to the JSON report', 'results.json')
     .action(async (opts: Record<string, unknown>) => {
-      const input = resolve(process.cwd(), typeof opts['input'] === 'string' ? opts['input'] : 'results.json');
+      const input = resolve(
+        process.cwd(),
+        typeof opts['input'] === 'string' ? opts['input'] : 'results.json',
+      );
       try {
         const doc = JSON.parse(await readFile(input, 'utf8')) as {
           total?: number;

@@ -1,0 +1,28 @@
+{
+  "id": "matrix-rokli-red-campaign-corporate-seller-return-policy",
+  "version": "1.0",
+  "name": "Results for Rokli + Red Campaign + Corporate Seller + Return Policy",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "https://www.trendyol.com/sr?wc=56&rp=true"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "results",
+      "action": "expectMinCount",
+      "target": ".image-overlay-slice",
+      "value": 1
+    },
+    {
+      "id": "no-errors",
+      "action": "expectNoConsoleErrors"
+    }
+  ]
+}
