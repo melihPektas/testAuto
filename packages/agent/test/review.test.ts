@@ -8,7 +8,13 @@ import {
   changesetFromNumstat,
   jiraTrigger,
 } from '../src/changeset.js';
-import { combineSurfaces, planReview, ruleForFile } from '../src/review.js';
+import {
+  buildReviewReport,
+  combineSurfaces,
+  planReview,
+  reviewReportToMarkdown,
+  ruleForFile,
+} from '../src/review.js';
 
 import type { AddressInfo } from 'node:net';
 
@@ -173,5 +179,66 @@ describe('changeset parsing', () => {
     expect(trigger.issueKey).toBe('SHOP-42');
     expect(trigger.status).toBe('In Review');
     expect(trigger.links).toContain('https://gitlab.com/acme/shop/-/merge_requests/17');
+  });
+});
+
+describe('review report', () => {
+  const plan = {
+    surface: 'both' as const,
+    files: [
+      {
+        path: 'src/pages/Cart.tsx',
+        surface: 'ui' as const,
+        source: 'rule' as const,
+        reason: 'a React component',
+      },
+      {
+        path: 'api/routes/cart.ts',
+        surface: 'backend' as const,
+        source: 'rule' as const,
+        reason: 'an API layer',
+      },
+    ],
+    undecided: [],
+  };
+
+  it('is not ok when a suite failed', () => {
+    const report = buildReviewReport(
+      plan,
+      [
+        { label: 'UI', passed: 3, failed: 1, flaky: 0 },
+        { label: 'backend', passed: 4, failed: 0, flaky: 0 },
+      ],
+      'my change',
+    );
+    expect(report.ok).toBe(false);
+    const md = reviewReportToMarkdown(report);
+    expect(md).toContain('Review found failures');
+    expect(md).toContain('| UI | 3 | 1 | 0 | ✕ |');
+    expect(md).toContain('a React component');
+  });
+
+  it('is ok when every suite that ran passed', () => {
+    const report = buildReviewReport(
+      plan,
+      [{ label: 'backend', passed: 4, failed: 0, flaky: 0 }],
+      undefined,
+    );
+    expect(report.ok).toBe(true);
+    expect(reviewReportToMarkdown(report)).toContain('Review passed');
+  });
+
+  it('is not a pass when nothing could run', () => {
+    // a review that proved nothing must not report success
+    const report = buildReviewReport(
+      plan,
+      [
+        { label: 'UI', passed: 0, failed: 0, flaky: 0, skipped: 'no --url given' },
+        { label: 'backend', passed: 0, failed: 0, flaky: 0, skipped: 'no --spec given' },
+      ],
+      undefined,
+    );
+    expect(report.ok).toBe(false);
+    expect(reviewReportToMarkdown(report)).toContain('skipped: no --url given');
   });
 });

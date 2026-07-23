@@ -12,6 +12,8 @@ import {
   failuresFromReport,
   matrixSite,
   planReview,
+  buildReviewReport,
+  reviewReportToMarkdown,
   proposeRepair,
   repairIsSafe,
   triageFailure,
@@ -45,7 +47,7 @@ import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
 
-import type { Changeset } from '@test-orchestrator/agent';
+import type { Changeset, SuiteResult } from '@test-orchestrator/agent';
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { LlmConfig, TestCase } from '@test-orchestrator/schema';
 import type { Command } from 'commander';
@@ -423,6 +425,7 @@ export function registerCommands(program: Command): void {
     .option('-c, --config <path>', 'config for the run step')
     .option('-m, --model <model>', 'model id for classifying ambiguous files')
     .option('-u, --llm-url <url>', 'OpenAI-compatible base URL')
+    .option('--report <path>', 'write a Markdown + JSON review report (e.g. to post back to Jira)')
     .action(async (opts: Record<string, unknown>) => {
       try {
         const changeset = await readChangeset(opts);
@@ -453,11 +456,18 @@ export function registerCommands(program: Command): void {
         const wantUi = plan.surface === 'ui' || plan.surface === 'both';
         const wantBackend = plan.surface === 'backend' || plan.surface === 'both';
 
-        const suites: { label: string; testsDir: string }[] = [];
+        const suiteResults: SuiteResult[] = [];
 
         if (wantUi) {
           if (url === undefined) {
             logger.warn('UI is affected but no --url was given; skipping the UI tests');
+            suiteResults.push({
+              label: 'UI',
+              passed: 0,
+              failed: 0,
+              flaky: 0,
+              skipped: 'no --url given',
+            });
           } else {
             logger.info(`authoring UI tests against ${url}`);
             const site = await authorSite(url, {
@@ -466,39 +476,63 @@ export function registerCommands(program: Command): void {
               maxPages: 2,
             });
             await writeAuthored(join(dir, 'ui'), site.cases);
-            suites.push({ label: 'UI', testsDir: join(dir, 'ui', 'authored') });
+            suiteResults.push({
+              label: 'UI',
+              ...(await runSuite(join(dir, 'ui', 'authored'), opts)),
+            });
           }
         }
 
         if (wantBackend) {
           if (spec === undefined) {
             logger.warn('backend is affected but no --spec was given; skipping the API tests');
+            suiteResults.push({
+              label: 'backend',
+              passed: 0,
+              failed: 0,
+              flaky: 0,
+              skipped: 'no --spec given',
+            });
           } else {
             logger.info(`generating API tests from ${spec}`);
             const api = await loadSpec(spec);
             const { cases } = generateApiTests(api);
             await writeAuthored(join(dir, 'backend'), cases);
-            suites.push({ label: 'backend', testsDir: join(dir, 'backend', 'api') });
+            suiteResults.push({
+              label: 'backend',
+              ...(await runSuite(join(dir, 'backend', 'api'), opts)),
+            });
           }
         }
 
-        // Report each surface the plan asked for and could run.
-        let anyFailed = false;
-        for (const suite of suites) {
-          const summary = await runSuite(suite.testsDir, opts);
-          const status = summary.failed > 0 ? 'FAIL' : 'PASS';
+        for (const suite of suiteResults) {
+          if (suite.skipped !== undefined) {
+            continue;
+          }
+          const status = suite.failed > 0 ? 'FAIL' : 'PASS';
           logger.info(
-            `[${status}] ${suite.label}: ${String(summary.passed)} passed, ${String(summary.failed)} failed, ${String(summary.flaky)} flaky`,
+            `[${status}] ${suite.label}: ${String(suite.passed)} passed, ${String(suite.failed)} failed, ${String(suite.flaky)} flaky`,
           );
-          if (summary.failed > 0) {
-            anyFailed = true;
-          }
         }
 
-        if (suites.length === 0) {
+        const report = buildReviewReport(plan, suiteResults, changeset.title);
+        const reportPath = typeof opts['report'] === 'string' ? opts['report'] : undefined;
+        if (reportPath !== undefined) {
+          const md = reviewReportToMarkdown(report);
+          await writeFile(resolve(process.cwd(), reportPath), md, 'utf8');
+          const jsonPath = reportPath.replace(/\.mde?$|\.md$/i, '') + '.json';
+          await writeFile(
+            resolve(process.cwd(), jsonPath),
+            `${JSON.stringify(report, null, 2)}\n`,
+            'utf8',
+          );
+          logger.info(`wrote review report to ${reportPath} (and ${jsonPath})`);
+        }
+
+        if (suiteResults.every((s) => s.skipped !== undefined)) {
           logger.warn('nothing was testable for this change with the inputs given');
         }
-        if (anyFailed) {
+        if (!report.ok) {
           process.exitCode = 1;
         }
       } catch (err) {

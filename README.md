@@ -343,6 +343,11 @@ this change is: BOTH
 [FAIL] UI: 2 passed, 4 failed
 ```
 
+`--report review.md` writes the outcome as Markdown (a status heading, a
+per-suite table, and the file classification) plus a JSON twin — the shape you
+post back to the Jira issue or the merge request. A review where nothing could
+run is not a pass: it proved nothing, and the report says so.
+
 ### As a webhook
 
 The dashboard's `POST /api/review` takes the same payloads. A Jira webhook

@@ -246,3 +246,82 @@ export async function planReview(
     undecided: ambiguous.filter((p) => modelVerdicts.get(p)?.source !== 'model'),
   };
 }
+
+export interface SuiteResult {
+  readonly label: string;
+  readonly passed: number;
+  readonly failed: number;
+  readonly flaky: number;
+  /** Present when the surface was affected but could not be tested. */
+  readonly skipped?: string;
+}
+
+export interface ReviewReport {
+  readonly title: string | undefined;
+  readonly surface: Surface;
+  readonly files: FileVerdict[];
+  readonly suites: SuiteResult[];
+  /** True when every suite that ran passed. */
+  readonly ok: boolean;
+}
+
+/**
+ * Assemble the outcome of a review into a report structure. Kept separate from
+ * rendering so the same result feeds JSON for a machine and Markdown for a Jira
+ * comment.
+ *
+ * @public
+ */
+export function buildReviewReport(
+  plan: ReviewPlan,
+  suites: SuiteResult[],
+  title: string | undefined,
+): ReviewReport {
+  const ran = suites.filter((s) => s.skipped === undefined);
+  return {
+    title,
+    surface: plan.surface,
+    files: plan.files,
+    suites,
+    // A review with nothing runnable is not a pass: it proved nothing.
+    ok: ran.length > 0 && ran.every((s) => s.failed === 0),
+  };
+}
+
+/**
+ * Render a review report as Markdown — the shape you would post back to a Jira
+ * issue or a merge request.
+ *
+ * @public
+ */
+export function reviewReportToMarkdown(report: ReviewReport): string {
+  const lines: string[] = [];
+  const heading = report.ok ? '✅ Review passed' : '❌ Review found failures';
+  lines.push(`## ${heading}`);
+  if (report.title !== undefined) {
+    lines.push(`**Change:** ${report.title}`);
+  }
+  lines.push(`**Surface:** ${report.surface}`, '');
+
+  if (report.suites.length > 0) {
+    lines.push('| Suite | Passed | Failed | Flaky | |', '| --- | --- | --- | --- | --- |');
+    for (const suite of report.suites) {
+      if (suite.skipped !== undefined) {
+        lines.push(`| ${suite.label} | — | — | — | skipped: ${suite.skipped} |`);
+      } else {
+        const mark = suite.failed === 0 ? '✓' : '✕';
+        lines.push(
+          `| ${suite.label} | ${String(suite.passed)} | ${String(suite.failed)} | ${String(suite.flaky)} | ${mark} |`,
+        );
+      }
+    }
+    lines.push('');
+  }
+
+  lines.push('<details><summary>How this change was classified</summary>', '');
+  for (const file of report.files) {
+    lines.push(`- \`${file.path}\` → **${file.surface}** (${file.source}: ${file.reason})`);
+  }
+  lines.push('</details>');
+  return `${lines.join('\n')}\n`;
+}
