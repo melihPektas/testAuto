@@ -167,6 +167,10 @@
   .tri .meta.low { color: var(--warn); }
   details.shot { margin-top: 0.45rem; }
   details.shot summary { cursor: pointer; color: var(--info); font-size: 0.76rem; }
+  .tri .repair { margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .tri .repair button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+  .tri .repair .outcome { font-size: 0.8rem; }
+  .tri .repair .outcome code { color: #cfe0ff; }
   details.shot img { max-width: 100%; margin-top: 0.4rem; border: 1px solid var(--border); border-radius: 9px; display: block; }
 
   /* ---- misc ---- */
@@ -545,6 +549,11 @@
           shot +
           '<div class="meta' + (t.confidence === 'low' ? ' low' : '') + '">' +
             esc(t.confidence) + ' confidence · decided by ' + esc(t.source) + '</div>' +
+          (t.verdict === 'test-bug' && t.confidence === 'high' && t.file
+            ? '<div class="repair" data-file="' + esc(t.file) + '">' +
+                '<button class="repair-btn">Fix &amp; verify</button>' +
+                '<span class="outcome muted"></span></div>'
+            : '') +
         '</div></div>');
       log('  [' + t.verdict + '] ' + (t.testCaseName || t.testCaseId));
     });
@@ -567,6 +576,55 @@
       setStatus('run failed', 'fail');
       finish();
     });
+  });
+
+  // ---------- repair ----------
+  $('triage').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.repair-btn');
+    if (!btn) return;
+    const wrap = btn.closest('.repair');
+    const file = wrap.dataset.file;
+    const out = wrap.querySelector('.outcome');
+    const apply = btn.dataset.apply === '1';
+
+    btn.disabled = true;
+    btn.textContent = apply ? 'Applying…' : 'Checking…';
+    out.className = 'outcome muted';
+    out.textContent = apply ? 'writing and re-running…' : 'proposing and verifying…';
+
+    try {
+      const r = await fetch('/api/repair', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dir: testsDir(), configPath: cfgPath(), file, apply }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+
+      if (!d.repaired) {
+        btn.remove();
+        out.className = 'outcome muted';
+        out.textContent = 'no fix — ' + esc(d.reason || 'declined');
+        return;
+      }
+      if (d.written) {
+        wrap.innerHTML = '<span class="outcome ok">✓ fixed and written: <code>' +
+          esc(d.from) + '</code> → <code>' + esc(d.to) + '</code></span>';
+      } else {
+        // Verified but not yet written: offer the write as a second, explicit step.
+        out.className = 'outcome ok';
+        out.innerHTML = 'verified: <code>' + esc(d.from) + '</code> → <code>' + esc(d.to) +
+          '</code> · <span class="muted">' + esc(d.rationale || '') + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Apply fix';
+        btn.dataset.apply = '1';
+      }
+    } catch (err) {
+      out.className = 'outcome err';
+      out.textContent = esc(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Fix & verify';
+    }
   });
 
   // ---------- test-case editor ----------

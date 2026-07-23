@@ -4,10 +4,14 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  applyRepair,
   authorSite,
   failuresFromReport,
   llmOptionsFor,
   matrixSite,
+  proposeRepair,
+  repairIsSafe,
+  triageFailure,
   triageFailures,
   writeAuthored,
 } from '@test-orchestrator/agent';
@@ -16,7 +20,7 @@ import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
-import type { LlmConfig } from '@test-orchestrator/schema';
+import type { LlmConfig, TestCase } from '@test-orchestrator/schema';
 
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../public');
 
@@ -245,6 +249,20 @@ async function handleRunStream(
       );
       send('triage:start', { count: failures.length });
       const byId = new Map(failures.map((f) => [f.testCaseId, f]));
+      // Map each test-case id back to its file so the UI can request a repair.
+      const fileById = new Map<string, string>();
+      for (const file of await listTests(testsDir)) {
+        try {
+          const parsed = JSON.parse(await readFile(join(testsDir, file), 'utf8')) as {
+            id?: unknown;
+          };
+          if (typeof parsed.id === 'string') {
+            fileById.set(parsed.id, file);
+          }
+        } catch {
+          // a file that will not parse simply has no repair target
+        }
+      }
       const result = await triageFailures(failures, {
         ...llmOptionsFor('triage', config.llm),
         onTriage: (item) => {
@@ -254,6 +272,7 @@ async function handleRunStream(
             testCaseName: failure?.testCaseName,
             message: failure?.message,
             evidence: failure?.evidence,
+            file: fileById.get(item.testCaseId),
           });
         },
       });
@@ -377,6 +396,110 @@ function generateParams(url: URL): GenerateParams {
   };
 }
 
+/**
+ * Propose a repair for one failing test, verify it by re-running, and — only
+ * when asked and only when it passes — write it back. This is the CLI `repair`
+ * flow behind a button, and it keeps every one of that flow's refusals: it acts
+ * on nothing but a high-confidence test-bug, it can only repoint a selector, and
+ * it re-runs before it believes itself.
+ */
+async function handleRepair(res: ServerResponse, body: unknown): Promise<void> {
+  const input = (body ?? {}) as {
+    dir?: string;
+    file?: string;
+    configPath?: string;
+    apply?: boolean;
+  };
+  const dir = resolve(process.cwd(), input.dir ?? '.');
+  const target = resolveTestCaseFile(dir, input.file ?? '');
+  if (target === undefined) {
+    sendJson(res, 400, { error: 'invalid test-case file name' });
+    return;
+  }
+
+  const configPath = resolve(process.cwd(), input.configPath ?? 'test-orchestrator.config.json');
+  let config: WebConfig;
+  let testCase: TestCase;
+  try {
+    config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
+    const parsed: unknown = JSON.parse(await readFile(target, 'utf8'));
+    const validated = validateTestCase(parsed);
+    if (!validated.ok) {
+      sendJson(res, 400, { error: formatAjvErrors(validated.errors) });
+      return;
+    }
+    testCase = validated.data;
+  } catch (err) {
+    sendJson(res, 400, { error: (err as Error).message });
+    return;
+  }
+
+  const makeRunners = (): ReturnType<typeof buildRunnerRegistry> =>
+    buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+
+  // Reproduce the failure so triage and repair see real evidence.
+  const before = await executeRun({
+    config: config as unknown as RunOptions['config'],
+    testCases: [testCase] as RunOptions['testCases'],
+    runners: makeRunners(),
+  });
+  const failures = failuresFromReport(
+    before as unknown as Parameters<typeof failuresFromReport>[0],
+    [{ id: testCase.id, steps: testCase.steps }],
+  );
+  if (failures.length === 0) {
+    sendJson(res, 200, { repaired: false, reason: 'the test passes as it is' });
+    return;
+  }
+
+  const llm = llmOptionsFor('triage', config.llm);
+  const triage = await triageFailure(failures[0]!, llm);
+  const proposal = await proposeRepair(
+    testCase,
+    failures[0]!,
+    triage,
+    llmOptionsFor('repair', config.llm),
+  );
+  if (proposal.repair === undefined) {
+    sendJson(res, 200, { repaired: false, verdict: triage.verdict, reason: proposal.declined });
+    return;
+  }
+
+  const repaired = applyRepair(testCase, proposal.repair);
+  const unsafe = repairIsSafe(testCase, repaired, proposal.repair);
+  const revalidated = validateTestCase(repaired);
+  if (unsafe !== undefined || !revalidated.ok) {
+    sendJson(res, 200, {
+      repaired: false,
+      reason: unsafe ?? formatAjvErrors(revalidated.ok ? [] : revalidated.errors),
+    });
+    return;
+  }
+
+  // A repair is a claim that the test now passes. Check the claim.
+  const after = await executeRun({
+    config: config as unknown as RunOptions['config'],
+    testCases: [repaired] as RunOptions['testCases'],
+    runners: makeRunners(),
+  });
+  if (after.status !== 'pass') {
+    sendJson(res, 200, { repaired: false, reason: 'the proposed fix did not make the test pass' });
+    return;
+  }
+
+  const written = input.apply === true;
+  if (written) {
+    await writeFile(target, `${JSON.stringify(repaired, null, 2)}\n`, 'utf8');
+  }
+  sendJson(res, 200, {
+    repaired: true,
+    written,
+    from: proposal.repair.from,
+    to: proposal.repair.to,
+    rationale: proposal.repair.rationale,
+  });
+}
+
 export function createDashboardServer(): ReturnType<typeof createServer> {
   return createServer((req, res) => {
     void (async (): Promise<void> => {
@@ -439,6 +562,10 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
         }
         if (req.method === 'GET' && url.pathname === '/api/artifact') {
           await handleArtifact(res, url.searchParams.get('path') ?? '');
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/api/repair') {
+          await handleRepair(res, await readBody(req));
           return;
         }
         if (req.method === 'POST' && url.pathname === '/api/run') {

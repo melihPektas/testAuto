@@ -414,6 +414,12 @@ node packages/cli/bin/test-orchestrator.js repair -i results.json -t authored --
 - Every repair is **verified by re-running the test**. Nothing is written unless
   the change actually fixes it, and nothing at all without `--apply`.
 
+The dashboard exposes the same flow behind a **Fix & verify** button, which
+appears only on a high-confidence `test-bug` verdict. It proposes and verifies
+without writing anything; a second, explicit **Apply fix** click is what commits
+the change to the file. Every refusal above still holds — the button on a
+`test-data` verdict never appears, because no repair is proposed for one.
+
 The dangerous case is worth being concrete about. Two demoshop tests fail looking
 for `.welcome-message` while the page really does contain `.error-message` — a
 naive healer would repoint them and turn a failing login into a passing test.
