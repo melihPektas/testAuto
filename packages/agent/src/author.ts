@@ -1,6 +1,7 @@
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
-import { chat, extractJson } from './llm.js';
+import { readAuthorCache, signPage, writeAuthorCache } from './cache.js';
+import { chat, extractJson, resolveLlm } from './llm.js';
 
 import type { LlmOptions } from './llm.js';
 import type { DiscoveredPage } from '@test-orchestrator/browser';
@@ -29,6 +30,12 @@ export interface AuthorOptions extends LlmOptions {
   readonly runner?: string;
   /** How many scenarios to ask for (default 3). */
   readonly count?: number;
+  /**
+   * Directory for caching authored cases by page signature. A local model
+   * costs tens of seconds per call; an unchanged page should not pay it twice.
+   * Omit to disable caching entirely.
+   */
+  readonly cacheDir?: string;
 }
 
 export interface RejectedCase {
@@ -142,6 +149,17 @@ export async function authorTestsForPage(
   const runner = options.runner ?? 'ui';
   const origin = new URL(page.url).origin;
 
+  // A cache hit skips the model entirely. Cached cases are re-validated on read,
+  // so the cache is a shortcut past the model, never past the boundary.
+  const cacheKey =
+    options.cacheDir === undefined ? undefined : signPage(page, resolveLlm(options).model, count);
+  if (options.cacheDir !== undefined && cacheKey !== undefined) {
+    const cached = await readAuthorCache(options.cacheDir, cacheKey);
+    if (cached !== undefined) {
+      return { accepted: cached, rejected: [], raw: '(from cache)' };
+    }
+  }
+
   let raw: string;
   try {
     raw = await chat(SYSTEM_PROMPT, describePage(page, count), options);
@@ -187,6 +205,11 @@ export async function authorTestsForPage(
       continue;
     }
     accepted.push(result.data);
+  }
+
+  // Cache what survived validation, so the next run of an unchanged page is free.
+  if (options.cacheDir !== undefined && cacheKey !== undefined && accepted.length > 0) {
+    await writeAuthorCache(options.cacheDir, cacheKey, accepted);
   }
 
   return { accepted, rejected, raw };

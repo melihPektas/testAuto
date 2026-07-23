@@ -211,6 +211,10 @@ export function registerCommands(program: Command): void {
     .option('-d, --dir <dir>', 'output directory (cases land in <dir>/authored/)', '.')
     .option('-p, --pages <n>', 'how many same-origin pages to explore', '3')
     .option('-n, --count <n>', 'scenarios to request per page', '3')
+    .option(
+      '--cache <dir>',
+      'cache authored cases by page signature; an unchanged page skips the model',
+    )
     .option('-m, --model <model>', 'model id (default: $TEST_ORCHESTRATOR_LLM_MODEL)')
     .option(
       '-u, --llm-url <url>',
@@ -234,8 +238,10 @@ export function registerCommands(program: Command): void {
         const cfg = await llmConfig(undefined);
         announce('author', cfg, overrides);
 
+        const cacheDir = typeof opts['cache'] === 'string' ? opts['cache'] : undefined;
         const site = await authorSite(url, {
           ...llmOptionsFor('author', cfg, overrides),
+          ...(cacheDir !== undefined ? { cacheDir } : {}),
           maxPages: int('pages', 3),
           count: int('count', 3),
           onPage: (pageUrl, accepted, rejected) => {
