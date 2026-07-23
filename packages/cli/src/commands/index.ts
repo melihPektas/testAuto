@@ -11,6 +11,8 @@ import {
   createJunitReporter,
   buildReporters,
   buildGeneratorRegistry,
+  loadPlugins,
+  createOchestratorRegistries,
 } from '@test-orchestrator/core';
 
 import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
@@ -191,16 +193,73 @@ export function registerCommands(program: Command): void {
 
   program
     .command('report')
-    .description('Produce a report (not yet implemented)')
-    .action(() => {
-      logger.info('report: not yet implemented');
+    .description('Summarise a JSON report produced by the json reporter')
+    .option('-i, --input <path>', 'path to the JSON report', 'results.json')
+    .action(async (opts: Record<string, unknown>) => {
+      const input = resolve(process.cwd(), typeof opts['input'] === 'string' ? opts['input'] : 'results.json');
+      try {
+        const doc = JSON.parse(await readFile(input, 'utf8')) as {
+          total?: number;
+          passed?: number;
+          failed?: number;
+          flaky?: number;
+          durationMs?: number;
+          results?: {
+            testCaseName: string;
+            status: string;
+            durationMs: number;
+            error?: { message?: string };
+          }[];
+        };
+        const results = doc.results ?? [];
+        logger.info(`report: ${input}`);
+        logger.info(
+          `  ${String(doc.passed ?? 0)} passed, ${String(doc.failed ?? 0)} failed, ` +
+            `${String(doc.flaky ?? 0)} flaky of ${String(doc.total ?? results.length)} ` +
+            `(${String(doc.durationMs ?? 0)}ms)`,
+        );
+        for (const result of results) {
+          const mark =
+            result.status === 'pass' ? 'PASS' : result.status === 'flaky' ? 'FLAKY' : 'FAIL';
+          logger.info(`  [${mark}] ${result.testCaseName} (${String(result.durationMs)}ms)`);
+          if (result.error?.message !== undefined) {
+            logger.error(`         ${result.error.message}`);
+          }
+        }
+        if ((doc.failed ?? 0) > 0) {
+          process.exitCode = 1;
+        }
+      } catch (err) {
+        logger.error(`failed to read report: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
     });
 
   const plugin = program.command('plugin').description('Manage plugins');
   plugin
     .command('list')
-    .description('List registered plugins')
-    .action(() => {
-      logger.info('no plugins registered');
+    .description('List the plugins declared in the config and whether they load')
+    .action(async () => {
+      try {
+        const { config } = await resolveConfig(undefined);
+        const declared = config.plugins ?? [];
+        if (declared.length === 0) {
+          logger.info('no plugins declared in the config');
+          return;
+        }
+        const registry = createOchestratorRegistries().plugins;
+        const loaded = await loadPlugins(declared, registry);
+        for (const entry of loaded) {
+          if (entry.loaded) {
+            logger.info(`  [OK]   ${entry.name} (${entry.path})`);
+          } else {
+            logger.warn(`  [SKIP] ${entry.name} (${entry.path}) — ${entry.error ?? 'unknown'}`);
+          }
+        }
+        logger.info(`${loaded.filter((l) => l.loaded).length}/${loaded.length} plugin(s) loaded`);
+      } catch (err) {
+        logger.error(`failed to list plugins: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
     });
 }
