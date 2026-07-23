@@ -20,6 +20,8 @@ module.exports = {
         'mcp',
         'config',
         'deps',
+        // repo-wide: README, CI, tooling that belongs to no single package
+        'repo',
         'release',
       ],
     ],

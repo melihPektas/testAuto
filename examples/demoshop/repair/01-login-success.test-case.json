@@ -34,7 +34,7 @@
     {
       "id": "welcome",
       "action": "waitFor",
-      "target": ".welcome-banner"
+      "target": ".welcome-message"
     }
   ],
   "timeout": 30000,
