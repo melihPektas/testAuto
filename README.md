@@ -47,9 +47,12 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 - **Triage** — when a test fails, classify what the failure _means_:
   `product-bug`, `test-bug`, `flaky`, `environment` or `test-data`. Unambiguous
   failures are decided by rule with no model call at all.
+- **Self-healing (narrowly)** — when triage blames the _test_, propose a stale
+  selector fix, verify it by re-running, and only then offer to write it. The
+  one edit allowed is repointing a step at a selector the page actually has.
 - **CSV export** — hand the generated inventory to a QA team or a test-management
   tool (`--per-step` for step-level rows).
-- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `triage`, `export`, `report`, `plugin`.
+- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `triage`, `repair`, `export`, `report`, `plugin`.
 - **Web dashboard** — browse test cases, run them, and watch results stream live
   over Server-Sent Events.
 
@@ -198,6 +201,43 @@ Artifacts land under the workspace's `.artifacts/<test-case-id>/`:
 A model that is slow, unreachable or off-contract yields a low-confidence result
 rather than an exception. Triage must never break the run that produced the
 failure.
+
+### Self-healing tests, and what that must not mean
+
+A suite that heals itself by weakening its assertions is worse than a suite that
+stays red: it turns a broken application green. So `repair` is deliberately
+narrow.
+
+```bash
+node packages/cli/bin/test-orchestrator.js repair -i results.json -t authored
+node packages/cli/bin/test-orchestrator.js repair -i results.json -t authored --apply
+```
+
+It refuses to act unless triage says `test-bug` with high confidence.
+`product-bug` would hide a real defect, `environment` would pretend a blocked run
+succeeded, and `test-data` would mean inventing credentials — which it never
+does.
+
+The only edit it can make is repointing one step at a different selector, and
+the replacement must be one the runner _observed on the page_. It cannot delete
+a step, lower an expected count, accept a different status or rewrite an expected
+string. `repairIsSafe` re-checks the result, so a bug in the repair code cannot
+weaken a suite either.
+
+Every repair is then verified by re-running the test. Nothing is written unless
+the change actually fixes it, and nothing is written at all without `--apply`.
+
+The dangerous case is worth being concrete about. Two demoshop tests fail
+looking for `.welcome-message`, and the page really does contain a
+`.error-message` — a naive healer would repoint them and turn a failing login
+into a passing test. Triage calls those `test-data` (the credentials are
+invented), so no repair is proposed. When the same selector is stale for the
+right reason — the app renamed it to `.welcome-banner` and login genuinely
+works — the repair is proposed, verified and applied.
+
+Judgement calls run at temperature 0. That is not a detail: at 0.2 the same
+failure was triaged `test-bug` on one run and `product-bug` on the next, which
+is not an acceptable basis for editing files.
 
 ### Try it locally
 

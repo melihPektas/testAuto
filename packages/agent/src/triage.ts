@@ -156,7 +156,8 @@ Guidance:
   related selector instead of the one the step wanted — an error message where a
   success message was expected — the page is TELLING you why, and it is usually
   test-data or test-bug, not a broken application.
-- A page that rendered almost no text never really loaded: that is environment.
+- A page that rendered NO text at all never really loaded: that is environment.
+  A short page is not a broken page; read the visible text before deciding.
 - A selector that never appears is usually test-bug, unless earlier steps prove
   the page did render and the element is genuinely missing.
 - A login that leads nowhere, with credentials that look invented
@@ -194,8 +195,12 @@ function describeEvidence(evidence: Record<string, unknown> | undefined): string
   }
   if (typeof get('bodyChars') === 'number') {
     const chars = get('bodyChars') as number;
+    // Only a truly blank page is evidence of anything. A small page is just a
+    // small page: this once read "essentially nothing" below 50 characters and
+    // talked the model into calling a perfectly good 38-character account page
+    // an environment failure.
     lines.push(
-      `  the page rendered ${String(chars)} characters of text${chars < 50 ? ' — essentially nothing' : ''}`,
+      `  the page rendered ${String(chars)} characters of text${chars === 0 ? ' — the page was completely blank' : ''}`,
     );
   }
   if (typeof get('targetCount') === 'number') {
@@ -260,7 +265,13 @@ export async function triageFailure(failure: Failure, options: LlmOptions = {}):
 
   let raw: string;
   try {
-    raw = await chat(TRIAGE_PROMPT, describeFailure(failure), { ...options, json: true });
+    // Judgement, not generation: variance here would mean the same failure gets
+    // a different verdict on a rerun, and repairs are gated on this verdict.
+    raw = await chat(TRIAGE_PROMPT, describeFailure(failure), {
+      temperature: 0,
+      ...options,
+      json: true,
+    });
   } catch (err) {
     return unknown(`could not be triaged: ${(err as Error).message}`);
   }

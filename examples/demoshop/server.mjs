@@ -39,7 +39,7 @@ const login = (error) =>
 const welcome = (email) =>
   page(
     'Account - DemoShop',
-    `<h1>Account</h1><p class="welcome-message">Welcome, ${email}!</p><a href="/">Home</a>`,
+    `<h1>Account</h1><p class="welcome-banner">Welcome, ${email}!</p><a href="/">Home</a>`,
   );
 
 const server = createServer((req, res) => {

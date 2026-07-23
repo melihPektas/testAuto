@@ -1,0 +1,42 @@
+{
+  "id": "login-success",
+  "version": "1.0",
+  "name": "A registered user reaches their account",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "http://localhost:4700/login"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "email",
+      "action": "fill",
+      "target": "input[name='email']",
+      "value": "ada@example.com"
+    },
+    {
+      "id": "password",
+      "action": "fill",
+      "target": "input[name='password']",
+      "value": "Test1234!"
+    },
+    {
+      "id": "submit",
+      "action": "click",
+      "target": "button[type='submit']"
+    },
+    {
+      "id": "welcome",
+      "action": "waitFor",
+      "target": ".welcome-banner"
+    }
+  ],
+  "timeout": 30000,
+  "retry": 0
+}

@@ -2,10 +2,14 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import {
+  applyRepair,
   authorSite,
   failuresFromReport,
   matrixSite,
+  proposeRepair,
+  repairIsSafe,
   resolveLlm,
+  triageFailure,
   triageFailures,
   writeAuthored,
 } from '@test-orchestrator/agent';
@@ -30,6 +34,7 @@ import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
 
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
+import type { TestCase } from '@test-orchestrator/schema';
 import type { Command } from 'commander';
 
 const logger = createLogger();
@@ -303,6 +308,135 @@ export function registerCommands(program: Command): void {
         }
       } catch (err) {
         logger.error(`failed to triage: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('repair')
+    .description(
+      'Propose selector fixes for tests triage blames on the test, verify them by re-running, and optionally write them back',
+    )
+    .option('-i, --input <path>', 'path to the JSON report', 'results.json')
+    .option('-t, --tests <dir>', 'directory holding the test cases', '.')
+    .option('-c, --config <path>', 'path to config file')
+    .option('--apply', 'write verified repairs back to disk (default: propose only)')
+    .option('-m, --model <model>', 'model id (default: $TEST_ORCHESTRATOR_LLM_MODEL)')
+    .option(
+      '-u, --llm-url <url>',
+      'OpenAI-compatible base URL (default: $TEST_ORCHESTRATOR_LLM_URL)',
+    )
+    .action(async (opts: Record<string, unknown>) => {
+      try {
+        const input = resolve(
+          process.cwd(),
+          typeof opts['input'] === 'string' ? opts['input'] : 'results.json',
+        );
+        const testsDir = resolve(
+          process.cwd(),
+          typeof opts['tests'] === 'string' ? opts['tests'] : '.',
+        );
+        const report = JSON.parse(await readFile(input, 'utf8')) as Parameters<
+          typeof failuresFromReport
+        >[0];
+
+        const byId = new Map<string, { file: string; testCase: TestCase }>();
+        for (const file of (await readdir(testsDir))
+          .filter((f) => f.endsWith('.test-case.json'))
+          .sort()) {
+          const parsed: unknown = JSON.parse(await readFile(join(testsDir, file), 'utf8'));
+          const validated = validateTestCase(parsed);
+          if (validated.ok) {
+            byId.set(validated.data.id, { file, testCase: validated.data });
+          }
+        }
+
+        const failures = failuresFromReport(
+          report,
+          [...byId.values()].map((e) => ({
+            id: e.testCase.id,
+            steps: e.testCase.steps,
+          })),
+        );
+        if (failures.length === 0) {
+          logger.info('nothing to repair');
+          return;
+        }
+
+        const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
+        const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
+        const llm = {
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+        };
+
+        const { config } = await resolveConfig(
+          typeof opts['config'] === 'string' ? opts['config'] : undefined,
+        );
+        const makeRunners = (): ReturnType<typeof buildRunnerRegistry> =>
+          buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+
+        let verified = 0;
+        for (const failure of failures) {
+          const entry = byId.get(failure.testCaseId);
+          if (entry === undefined) {
+            continue;
+          }
+          const triage = await triageFailure(failure, llm);
+          const proposal = await proposeRepair(entry.testCase, failure, triage, llm);
+          if (proposal.repair === undefined) {
+            logger.info(`  ${failure.testCaseId}: no repair — ${proposal.declined ?? 'declined'}`);
+            continue;
+          }
+
+          const repaired = applyRepair(entry.testCase, proposal.repair);
+          const unsafe = repairIsSafe(entry.testCase, repaired, proposal.repair);
+          if (unsafe !== undefined) {
+            logger.error(`  ${failure.testCaseId}: repair rejected — ${unsafe}`);
+            continue;
+          }
+          const revalidated = validateTestCase(repaired);
+          if (!revalidated.ok) {
+            logger.error(
+              `  ${failure.testCaseId}: repair rejected — ${formatAjvErrors(revalidated.errors)}`,
+            );
+            continue;
+          }
+
+          // A repair is a claim that the test now passes. Check the claim.
+          const check = await executeRun({
+            config,
+            testCases: [repaired],
+            runners: makeRunners(),
+          });
+          const passes = check.status === 'pass';
+          const arrow = `${proposal.repair.from} → ${proposal.repair.to}`;
+          if (!passes) {
+            logger.warn(`  ${failure.testCaseId}: ${arrow} did NOT fix it — discarded`);
+            continue;
+          }
+
+          verified += 1;
+          logger.info(
+            `  ${failure.testCaseId}: ${arrow} — verified (${proposal.repair.rationale})`,
+          );
+          if (opts['apply'] === true) {
+            await writeFile(
+              join(testsDir, entry.file),
+              `${JSON.stringify(repaired, null, 2)}\n`,
+              'utf8',
+            );
+            logger.info(`    written to ${entry.file}`);
+          }
+        }
+
+        logger.info(
+          opts['apply'] === true
+            ? `applied ${String(verified)} verified repair(s)`
+            : `${String(verified)} verified repair(s) available — re-run with --apply to write them`,
+        );
+      } catch (err) {
+        logger.error(`failed to repair: ${(err as Error).message}`);
         process.exitCode = 1;
       }
     });

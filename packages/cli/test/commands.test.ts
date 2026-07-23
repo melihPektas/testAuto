@@ -28,6 +28,7 @@ describe('CLI Commands Registration', () => {
       'init',
       'matrix',
       'plugin',
+      'repair',
       'report',
       'run',
       'triage',
