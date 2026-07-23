@@ -68,6 +68,29 @@
     .editor-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
     .editor-head .file { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
     .ok { color: var(--pass-fg); font-size: 0.82rem; }
+    /* Verdict colours are semantic, not decorative: what needs a human is red,
+       what the suite can fix itself is amber, what was never our code is slate. */
+    .verdict { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; font-family: ui-monospace, monospace; }
+    .verdict.product-bug { background: #3a1620; color: #f87171; }
+    .verdict.test-bug    { background: #33260f; color: #fbbf24; }
+    .verdict.test-data   { background: #2b1f3d; color: #c4b5fd; }
+    .verdict.flaky       { background: #33260f; color: #fbbf24; }
+    .verdict.environment { background: #1b2537; color: #93b4e8; }
+    .triage-row { border-top: 1px solid var(--border); padding: 0.7rem 0; display: flex; gap: 0.7rem; align-items: flex-start; }
+    .triage-row .body { flex: 1; min-width: 0; }
+    .triage-row .who { font-weight: 600; margin-bottom: 0.15rem; }
+    .triage-row .why { font-size: 0.85rem; color: var(--text); }
+    .triage-row .meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+    .triage-row .fix { font-size: 0.8rem; color: var(--pass-fg); margin-top: 0.25rem; }
+    .triage-row .low { color: var(--flaky-fg); }
+    .evidence { margin-top: 0.4rem; font-size: 0.78rem; color: var(--muted); font-family: ui-monospace, monospace; }
+    .evidence code { color: #d6e2ff; }
+    .shot { margin-top: 0.5rem; }
+    .shot img { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; display: block; }
+    .shot summary { cursor: pointer; color: var(--accent); font-size: 0.78rem; }
+    .toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); }
+    .toggle input { width: auto; }
+    .verdict-counts { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
   </style>
 </head>
 <body>
@@ -90,6 +113,7 @@
         <button id="loadConfigBtn">Load config</button>
         <button id="loadTestsBtn">Load tests</button>
         <button id="runBtn" class="primary">Run</button>
+        <label class="toggle"><input type="checkbox" id="triageToggle" checked /> Triage failures</label>
       </div>
       <div id="config"></div>
       <div id="tests"></div>
@@ -108,6 +132,12 @@
     <div class="card" id="logCard" style="display:none">
       <h2>Live log</h2>
       <div id="log"></div>
+    </div>
+
+    <div class="card" id="triageCard" style="display:none">
+      <h2>Triage</h2>
+      <div id="triageCounts" class="verdict-counts"></div>
+      <div id="triage"></div>
     </div>
 
     <div class="card" id="resultsCard" style="display:none">
@@ -160,8 +190,14 @@
       runBtn.textContent = 'Running…';
       log.textContent = '';
       results.innerHTML = '';
+      $('triage').innerHTML = '';
+      $('triageCounts').innerHTML = '';
       $('logCard').style.display = 'block';
       $('resultsCard').style.display = 'none';
+      $('triageCard').style.display = 'none';
+
+      const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
       const append = (line) => {
         log.textContent += line + '\n';
@@ -174,7 +210,10 @@
         runBtn.textContent = 'Run';
       };
 
-      const url = `/api/run/stream?configPath=${encodeURIComponent(cfgPath())}&testsDir=${encodeURIComponent(testsDir())}`;
+      const wantsTriage = $('triageToggle').checked;
+      const url = `/api/run/stream?configPath=${encodeURIComponent(cfgPath())}`
+        + `&testsDir=${encodeURIComponent(testsDir())}`
+        + (wantsTriage ? '&triage=1' : '');
       source = new EventSource(url);
 
       source.addEventListener('progress', (e) => {
@@ -198,6 +237,62 @@
         }
         results.innerHTML = html;
         $('resultsCard').style.display = 'block';
+        // With triage on, the stream stays open until the verdicts are in.
+        if (!wantsTriage || s.failed === 0) {
+          append('done.');
+          finish();
+        }
+      });
+
+      source.addEventListener('triage:start', (e) => {
+        const { count } = JSON.parse(e.data);
+        $('triageCard').style.display = 'block';
+        $('triageCounts').innerHTML =
+          `<span class="muted">Judging ${count} failure${count === 1 ? '' : 's'}…</span>`;
+        append(`triaging ${count} failure(s)…`);
+      });
+
+      source.addEventListener('triage', (e) => {
+        const t = JSON.parse(e.data);
+        const ev = t.evidence || {};
+        const bits = [];
+        if (typeof ev.targetCount === 'number') {
+          bits.push(`selector matched <code>${ev.targetCount}</code>`);
+        }
+        if (Array.isArray(ev.similarSelectors) && ev.similarSelectors.length) {
+          bits.push(`page has <code>${ev.similarSelectors.map(esc).join('</code> <code>')}</code>`);
+        }
+        if (ev.excerpt) bits.push(`“${esc(String(ev.excerpt).slice(0, 90))}”`);
+
+        const shot = ev.screenshot
+          ? `<details class="shot"><summary>screenshot</summary>`
+            + `<img loading="lazy" alt="the page when the step failed" `
+            + `src="/api/artifact?path=${encodeURIComponent(ev.screenshot)}" /></details>`
+          : '';
+
+        $('triage').insertAdjacentHTML('beforeend',
+          `<div class="triage-row">`
+          + `<span class="verdict ${t.verdict}">${t.verdict}</span>`
+          + `<div class="body">`
+          +   `<div class="who">${esc(t.testCaseName || t.testCaseId)}</div>`
+          +   `<div class="why">${esc(t.reason)}</div>`
+          +   (t.suggestion ? `<div class="fix">→ ${esc(t.suggestion)}</div>` : '')
+          +   (bits.length ? `<div class="evidence">${bits.join(' · ')}</div>` : '')
+          +   shot
+          +   `<div class="meta${t.confidence === 'low' ? ' low' : ''}">`
+          +     `${t.confidence} confidence · decided by ${t.source}</div>`
+          + `</div></div>`);
+        append(`  [${t.verdict}] ${t.testCaseName || t.testCaseId}`);
+      });
+
+      source.addEventListener('triage:done', (e) => {
+        const d = JSON.parse(e.data);
+        const chips = Object.entries(d.byVerdict)
+          .sort((a, b) => b[1] - a[1])
+          .map(([v, n]) => `<span class="verdict ${v}">${v} · ${n}</span>`)
+          .join('');
+        $('triageCounts').innerHTML =
+          `${chips}<span class="chip">${d.byRule} by rule · ${d.byModel} by model</span>`;
         append('done.');
         finish();
       });

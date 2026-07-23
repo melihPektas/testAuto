@@ -28,6 +28,7 @@
     "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
   },
   "dependencies": {
+    "@test-orchestrator/agent": "workspace:*",
     "@test-orchestrator/core": "workspace:*",
     "@test-orchestrator/browser": "workspace:*",
     "@test-orchestrator/schema": "workspace:*"

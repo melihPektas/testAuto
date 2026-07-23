@@ -191,6 +191,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@test-orchestrator/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@test-orchestrator/browser':
         specifier: workspace:*
         version: link:../browser

@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { failuresFromReport, triageFailures } from '@test-orchestrator/agent';
 import { browserRunnerFactory } from '@test-orchestrator/browser';
 import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
@@ -68,11 +69,7 @@ function resolveTestCaseFile(dir: string, file: string): string | undefined {
   return target.startsWith(resolve(dir)) ? target : undefined;
 }
 
-async function handleGetTestCase(
-  res: ServerResponse,
-  dir: string,
-  file: string,
-): Promise<void> {
+async function handleGetTestCase(res: ServerResponse, dir: string, file: string): Promise<void> {
   const target = resolveTestCaseFile(dir, file);
   if (target === undefined) {
     sendJson(res, 400, { error: 'invalid test-case file name' });
@@ -133,7 +130,11 @@ function resolvePaths(input: { configPath?: string; testsDir?: string }): {
 async function loadInputs(
   configPath: string,
   testsDir: string,
-): Promise<{ config: WebConfig; testCases: unknown[]; runners: ReturnType<typeof buildRunnerRegistry> }> {
+): Promise<{
+  config: WebConfig;
+  testCases: unknown[];
+  runners: ReturnType<typeof buildRunnerRegistry>;
+}> {
   const config = JSON.parse(await readFile(configPath, 'utf8')) as WebConfig;
   const files = await listTests(testsDir);
   const testCases: unknown[] = [];
@@ -153,7 +154,7 @@ async function handleConfig(res: ServerResponse, configPath: string): Promise<vo
 }
 
 async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
-  const { configPath, testsDir } = resolvePaths((body ?? {}));
+  const { configPath, testsDir } = resolvePaths(body ?? {});
   const { config, testCases, runners } = await loadInputs(configPath, testsDir);
   const summary = await executeRun({
     config: config as unknown as RunOptions['config'],
@@ -164,7 +165,33 @@ async function handleRun(res: ServerResponse, body: unknown): Promise<void> {
   sendJson(res, 200, summary);
 }
 
-async function handleRunStream(res: ServerResponse, configPath: string, testsDir: string): Promise<void> {
+/**
+ * Serve a failure screenshot. Confined to the workspace's artifacts directory:
+ * the path comes from a run report, but a report is a file on disk and this
+ * endpoint must not become a way to read the rest of one.
+ */
+async function handleArtifact(res: ServerResponse, relative: string): Promise<void> {
+  const root = resolve(process.cwd(), '.artifacts');
+  const target = resolve(root, relative);
+  if (!target.startsWith(`${root}/`) || extname(target) !== '.png') {
+    sendJson(res, 400, { error: 'invalid artifact path' });
+    return;
+  }
+  try {
+    const content = await readFile(target);
+    res.writeHead(200, { 'content-type': 'image/png' });
+    res.end(content);
+  } catch {
+    sendJson(res, 404, { error: 'artifact not found' });
+  }
+}
+
+async function handleRunStream(
+  res: ServerResponse,
+  configPath: string,
+  testsDir: string,
+  triage: boolean,
+): Promise<void> {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache',
@@ -190,6 +217,38 @@ async function handleRunStream(res: ServerResponse, configPath: string, testsDir
       reporters: [streamer],
     });
     send('summary', summary);
+
+    if (triage && summary.failed > 0) {
+      // Each judged failure costs the model tens of seconds, so verdicts are
+      // streamed as they land rather than after the last one.
+      const failures = failuresFromReport(
+        summary as unknown as Parameters<typeof failuresFromReport>[0],
+        (testCases as { id?: unknown; steps?: unknown }[])
+          .filter(
+            (t): t is { id: string; steps: unknown[] } =>
+              typeof t.id === 'string' && Array.isArray(t.steps),
+          )
+          .map((t) => ({ id: t.id, steps: t.steps })),
+      );
+      send('triage:start', { count: failures.length });
+      const byId = new Map(failures.map((f) => [f.testCaseId, f]));
+      const result = await triageFailures(failures, {
+        onTriage: (item) => {
+          const failure = byId.get(item.testCaseId);
+          send('triage', {
+            ...item,
+            testCaseName: failure?.testCaseName,
+            message: failure?.message,
+            evidence: failure?.evidence,
+          });
+        },
+      });
+      send('triage:done', {
+        byVerdict: result.byVerdict,
+        byRule: result.byRule,
+        byModel: result.byModel,
+      });
+    }
   } catch (err) {
     send('error', { message: (err as Error).message });
   } finally {
@@ -233,7 +292,11 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
             configPath: url.searchParams.get('configPath') ?? undefined,
             testsDir: url.searchParams.get('testsDir') ?? undefined,
           });
-          await handleRunStream(res, configPath, testsDir);
+          await handleRunStream(res, configPath, testsDir, url.searchParams.get('triage') === '1');
+          return;
+        }
+        if (req.method === 'GET' && url.pathname === '/api/artifact') {
+          await handleArtifact(res, url.searchParams.get('path') ?? '');
           return;
         }
         if (req.method === 'POST' && url.pathname === '/api/run') {
