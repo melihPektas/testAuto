@@ -4,3 +4,4 @@ export * from './explorer.js';
 export * from './evidence.js';
 export * from './network.js';
 export * from './observe.js';
+export * from './visual.js';

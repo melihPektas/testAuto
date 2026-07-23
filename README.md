@@ -76,6 +76,11 @@ DOM dispose.
 
 **Understanding failures**
 
+- **Visual regression** — `expectScreenshot` records a baseline on the first run
+  and compares against it after, failing when more than a threshold of pixels
+  move (0.1% by default) and writing a highlighted diff. Antialiasing noise is
+  tolerated; a size change is reported as a size change, not a meaningless
+  percentage.
 - **Network observation** — while a UI test runs, every `fetch`/XHR the page
   makes is recorded. Assert that none failed, that none was slower than a
   budget, or that an endpoint was reached at all. A page can render a cached
@@ -580,10 +585,16 @@ seconds, and a dashboard that sits silent for a minute reads as hung.
     { "action": "press", "target": "#search", "value": "Enter" },
     { "action": "expectUrl", "value": "search=dress" },
     { "action": "expectMinCount", "target": ".product-card", "value": 1 },
-    { "action": "expectNoConsoleErrors" }
+    { "action": "expectNoConsoleErrors" },
+    { "action": "expectScreenshot", "value": 0.001 }
   ]
 }
 ```
+
+`expectScreenshot` writes the baseline to `.baselines/<test-case>/` — commit
+those; the diff and the actual shot of a failure go to `.artifacts/`, which you
+do not. The first run creates the baseline and says so, because a silently
+created baseline is a check that never actually ran.
 
 ## ⚠️ Limits worth knowing
 

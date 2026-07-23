@@ -1,10 +1,24 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 
 import { captureEvidence } from './evidence.js';
 import { endpointOf, isApiCall, recordNetwork, summariseNetwork } from './network.js';
+import { compareScreenshots } from './visual.js';
 
 import type { NetworkRecorder } from './network.js';
 import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
+
+/** Filesystem-safe slug for a test-case id used in a path. */
+function slug(value: string): string {
+  return (
+    value
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'case'
+  );
+}
 
 export interface BrowserRunnerOptions {
   /** Base URL prepended to relative `goto` targets. */
@@ -290,6 +304,63 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
           throw new Error(`horizontal overflow of ${String(overflow)}px at 375px width`);
         }
         return { output: 'no horizontal overflow at mobile width' };
+      }
+      case 'expectScreenshot': {
+        // A visual baseline is committed alongside the tests; a diff is a
+        // throwaway artifact. So they live in different places on purpose.
+        const maxRatio = value === undefined ? 0.001 : Number(value);
+        const index = ctx.testCase.steps.findIndex((s) => s === ctx.step);
+        // Name the baseline after the target, then the step id, then its
+        // position — a stable name survives adding a step before it.
+        const rawName =
+          typeof target === 'string' && target !== '' ? target : (step?.id ?? String(index + 1));
+        const name = rawName.replace(/[^a-z0-9]+/gi, '-');
+        const baselineDir = join(ctx.workspace.root, '.baselines', slug(ctx.testCase.id));
+        const baselinePath = join(baselineDir, `${name}.png`);
+
+        const shot = await page.screenshot({ fullPage: false });
+
+        let baseline: Buffer | undefined;
+        try {
+          baseline = await readFile(baselinePath);
+        } catch {
+          baseline = undefined;
+        }
+
+        // First run for this step: record the baseline and pass, but say so —
+        // a silently-created baseline is a check that never actually ran.
+        if (baseline === undefined) {
+          await mkdir(baselineDir, { recursive: true });
+          await writeFile(baselinePath, shot);
+          return {
+            output: `baseline created at ${baselinePath} — commit it; the next run compares against it`,
+          };
+        }
+
+        const comparison = compareScreenshots(shot, baseline, { pixelThreshold: 0.1 });
+        if (comparison.sizeMismatch) {
+          throw new Error(
+            `screenshot size changed from the baseline (now ${String(comparison.width)}×${String(comparison.height)})`,
+          );
+        }
+        if (comparison.ratio > maxRatio) {
+          // Write the current shot and the diff next to the run's artifacts so
+          // a human can see what moved.
+          const dir = join(ctx.workspace.artifacts, slug(ctx.testCase.id));
+          await mkdir(dir, { recursive: true });
+          const actualRel = join(slug(ctx.testCase.id), `${name}-actual.png`);
+          const diffRel = join(slug(ctx.testCase.id), `${name}-diff.png`);
+          await writeFile(join(ctx.workspace.artifacts, actualRel), shot);
+          if (comparison.diff !== undefined) {
+            await writeFile(join(ctx.workspace.artifacts, diffRel), comparison.diff);
+          }
+          const pct = (comparison.ratio * 100).toFixed(2);
+          const limit = (maxRatio * 100).toFixed(2);
+          throw new Error(`${pct}% of pixels changed (limit ${limit}%); see ${diffRel}`);
+        }
+        return {
+          output: `matches baseline within ${(maxRatio * 100).toFixed(2)}% (${String(comparison.diffPixels)} px differ)`,
+        };
       }
       case 'audit': {
         const checks: { name: string; ok: boolean; detail: string }[] = [];
