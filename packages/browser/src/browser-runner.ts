@@ -1,8 +1,9 @@
 import { chromium, type Browser, type Page, type Response } from 'playwright';
 
 import { captureEvidence } from './evidence.js';
+import { endpointOf, isApiCall, recordNetwork, summariseNetwork } from './network.js';
 
-import type { Evidence } from './evidence.js';
+import type { NetworkRecorder } from './network.js';
 import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
 
 export interface BrowserRunnerOptions {
@@ -50,20 +51,50 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
   let browser: Browser | undefined;
   let page: Page | undefined;
   let lastResponse: Response | null = null;
+  let network: NetworkRecorder | undefined;
   const consoleErrors: string[] = [];
 
   /** Capture the page for whichever failure path got here first. */
-  async function evidenceFor(ctx: RunContext): Promise<Evidence | undefined> {
+  async function evidenceFor(ctx: RunContext): Promise<Record<string, unknown> | undefined> {
     if (page === undefined) {
       return undefined;
     }
     const index = ctx.testCase.steps.findIndex((s) => s === ctx.step);
-    return captureEvidence(page, {
+    const evidence = await captureEvidence(page, {
       artifactsDir: ctx.workspace.artifacts,
       testCaseId: ctx.testCase.id,
       stepIndex: index === -1 ? 0 : index + 1,
       ...(typeof ctx.step?.target === 'string' ? { target: ctx.step.target } : {}),
     });
+
+    // What the page asked for matters as much as what it showed: a failure
+    // sitting next to a 500 from its own API reads very differently.
+    const net = summariseNetwork(network?.calls ?? []);
+    const failedApiCalls = net.broken
+      .slice(0, 5)
+      .map((c) => `${c.method} ${endpointOf(c.url)} → ${c.failure ?? String(c.status)}`);
+
+    return {
+      ...evidence,
+      apiCalls: net.apiCalls,
+      ...(failedApiCalls.length > 0 ? { failedApiCalls } : {}),
+    };
+  }
+
+  /**
+   * Network events reach this process out of band and arrive later than the
+   * page's own `await fetch(...)` resolves — at the moment a rendered element
+   * appears, we may still only know about the first call. Every network
+   * assertion therefore waits for the page to go quiet first, bounded, because
+   * a page that polls never goes quiet at all.
+   */
+  async function settleNetwork(target: Page): Promise<void> {
+    try {
+      await target.waitForLoadState('networkidle', { timeout: 5000 });
+    } catch {
+      // A page with polling or a websocket never reaches networkidle; assert on
+      // what we have rather than failing for a reason nobody asked about.
+    }
   }
 
   async function act(ctx: RunContext): Promise<{ output?: string }> {
@@ -171,6 +202,48 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         }
         return { output: `${String(count)} element(s) match "${selector}"` };
       }
+      case 'expectNoFailedRequests': {
+        await settleNetwork(page);
+        // A page can render a cached list while its API returns 500. Nothing on
+        // screen says so; the network does.
+        const summary = summariseNetwork(network?.calls ?? []);
+        if (summary.broken.length > 0) {
+          const worst = summary.broken
+            .slice(0, 3)
+            .map((c) => `${c.method} ${endpointOf(c.url)} → ${c.failure ?? String(c.status)}`)
+            .join(' | ');
+          throw new Error(`${String(summary.broken.length)} failed API call(s): ${worst}`);
+        }
+        return { output: `${String(summary.apiCalls)} API call(s), none failed` };
+      }
+      case 'expectRequestsUnder': {
+        await settleNetwork(page);
+        const budget = Number(value ?? 2000);
+        const summary = summariseNetwork(network?.calls ?? []);
+        const slow = (network?.calls ?? []).filter((c) => isApiCall(c) && c.durationMs > budget);
+        if (slow.length > 0) {
+          const worst = slow
+            .slice(0, 3)
+            .map((c) => `${endpointOf(c.url)} took ${String(c.durationMs)}ms`)
+            .join(' | ');
+          throw new Error(`${String(slow.length)} API call(s) over ${String(budget)}ms: ${worst}`);
+        }
+        const slowest = summary.slowest;
+        return {
+          output: `slowest API call ${slowest === undefined ? 'n/a' : `${String(slowest.durationMs)}ms`} (budget ${String(budget)}ms)`,
+        };
+      }
+      case 'expectApiCalled': {
+        await settleNetwork(page);
+        const needle = String(target ?? '');
+        const matched = (network?.calls ?? []).filter(
+          (c) => isApiCall(c) && c.url.includes(needle),
+        );
+        if (matched.length === 0) {
+          throw new Error(`the page never called an API matching "${needle}"`);
+        }
+        return { output: `${String(matched.length)} call(s) matched "${needle}"` };
+      }
       case 'expectNoConsoleErrors': {
         if (consoleErrors.length > 0) {
           throw new Error(
@@ -239,6 +312,21 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
               : `${String(consoleErrors.length)}: ${consoleErrors.slice(0, 2).join(' | ')}`,
         });
 
+        await settleNetwork(page);
+        const net = summariseNetwork(network?.calls ?? []);
+        const brokenDetail = net.broken
+          .slice(0, 2)
+          .map((c) => `${endpointOf(c.url)} → ${c.failure ?? String(c.status)}`)
+          .join(' | ');
+        checks.push({
+          name: 'api-calls',
+          ok: net.broken.length === 0,
+          detail:
+            net.broken.length === 0
+              ? `${String(net.apiCalls)} call(s), none failed`
+              : `${String(net.broken.length)} failed: ${brokenDetail}`,
+        });
+
         const totalImg = await page.$$eval('img', (imgs) => imgs.length);
         const brokenImg = await page.$$eval(
           'img',
@@ -302,6 +390,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       page.on('pageerror', (err) => {
         consoleErrors.push(err.message);
       });
+      network = recordNetwork(page);
     },
     runStep: async (ctx: RunContext): Promise<StepResult> => {
       const start = Date.now();
@@ -319,19 +408,18 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         if (evidence === undefined) {
           return failed;
         }
+        const shot = evidence['screenshot'];
         return {
           ...failed,
-          evidence: evidence as unknown as Record<string, unknown>,
-          ...(evidence.screenshot !== undefined ? { artifacts: [evidence.screenshot] } : {}),
+          evidence,
+          ...(typeof shot === 'string' ? { artifacts: [shot] } : {}),
         };
       }
     },
     // The engine calls this when it timed out or aborted the step: runStep never
     // returned, so the catch above never ran.
-    captureFailure: async (ctx: RunContext): Promise<Record<string, unknown> | undefined> => {
-      const evidence = await evidenceFor(ctx);
-      return evidence as unknown as Record<string, unknown> | undefined;
-    },
+    captureFailure: (ctx: RunContext): Promise<Record<string, unknown> | undefined> =>
+      evidenceFor(ctx),
     dispose: async (): Promise<void> => {
       await browser?.close();
       browser = undefined;

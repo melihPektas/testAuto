@@ -14,7 +14,12 @@ import {
   triageFailures,
   writeAuthored,
 } from '@test-orchestrator/agent';
-import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
+import {
+  browserRunnerFactory,
+  generateTestsFromObservation,
+  observeApiCalls,
+  urlGeneratorFactory,
+} from '@test-orchestrator/browser';
 import {
   executeRun,
   executeGenerators,
@@ -298,6 +303,47 @@ export function registerCommands(program: Command): void {
         }
       } catch (err) {
         logger.error(`failed to read the spec: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('observe')
+    .description('Watch the API calls a page makes, and generate tests from the healthy ones')
+    .argument('<url>', 'the page to load')
+    .option('-d, --dir <dir>', 'output directory (cases land in <dir>/observed/)', '.')
+    .option('-s, --settle <ms>', 'how long to keep watching after load', '4000')
+    .option('--all-origins', "include third-party endpoints, not just the page's own")
+    .action(async (url: string, opts: Record<string, unknown>) => {
+      try {
+        const rawSettle = opts['settle'];
+        const settle = Number.parseInt(typeof rawSettle === 'string' ? rawSettle : '', 10);
+        const observation = await observeApiCalls(url, {
+          settleMs: Number.isFinite(settle) && settle > 0 ? settle : 4000,
+          ...(opts['allOrigins'] === true ? { origins: [] } : {}),
+        });
+
+        logger.info(
+          `${String(observation.totalCalls)} request(s), ${String(observation.endpoints.length)} API endpoint(s)`,
+        );
+        for (const ep of observation.endpoints) {
+          const line = `  ${ep.method} ${ep.endpoint} → ${ep.statuses.join('/') || 'no response'} (${String(ep.calls)}×, ${String(ep.slowestMs)}ms)`;
+          if (ep.healthy) {
+            logger.info(line);
+          } else {
+            logger.error(line);
+          }
+        }
+
+        const { cases, skipped } = generateTestsFromObservation(observation);
+        for (const skip of skipped) {
+          logger.warn(`  not replayed — ${skip.endpoint}: ${skip.reason}`);
+        }
+        const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.';
+        const written = await writeAuthored(dir, cases);
+        logger.info(`wrote ${String(written.length)} test case(s) to ${dir}/observed/`);
+      } catch (err) {
+        logger.error(`failed to observe: ${(err as Error).message}`);
         process.exitCode = 1;
       }
     });

@@ -1,0 +1,32 @@
+{
+  "id": "catalogue-network",
+  "version": "1.0",
+  "name": "Catalogue page loads without a broken API call",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "http://localhost:4700/catalogue"
+    },
+    {
+      "id": "loaded",
+      "action": "waitFor",
+      "target": ".item"
+    },
+    {
+      "id": "items",
+      "action": "expectText",
+      "value": "Notebook"
+    },
+    {
+      "id": "net",
+      "action": "expectNoFailedRequests"
+    },
+    {
+      "id": "speed",
+      "action": "expectRequestsUnder",
+      "value": 2000
+    }
+  ]
+}

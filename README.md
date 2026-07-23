@@ -73,6 +73,13 @@ DOM dispose.
 
 **Understanding failures**
 
+- **Network observation** — while a UI test runs, every `fetch`/XHR the page
+  makes is recorded. Assert that none failed, that none was slower than a
+  budget, or that an endpoint was reached at all. A page can render a cached
+  list while its API returns 500, and nothing on screen says so.
+- **Endpoints without a spec** — load a page, watch what it calls, and generate
+  API tests from the healthy endpoints. This is what stands in for OpenAPI when
+  a site publishes none.
 - **Failure evidence** — a failing browser step captures a screenshot and the
   facts that bear on the failure: where the browser was, how much the page
   rendered, how many elements the selector matched, and which _related_ selectors
@@ -84,8 +91,8 @@ DOM dispose.
 
 **Interfaces**
 
-- **CLI** — `init`, `generate`, `author`, `matrix`, `api`, `run`, `triage`,
-  `repair`, `export`, `report`, `plugin`.
+- **CLI** — `init`, `generate`, `author`, `matrix`, `api`, `observe`, `run`,
+  `triage`, `repair`, `export`, `report`, `plugin`.
 - **MCP server** — `list_tests`, `run_tests`, `generate_tests`, `test_url`,
   `explore_site`, `author_tests`, `triage_failures`, `ingest_project`.
 - **Web dashboard** — point it at a URL and it generates tests, runs them in
@@ -255,6 +262,40 @@ node ../../packages/cli/bin/test-orchestrator.js api openapi.json -d .
 node ../../packages/cli/bin/test-orchestrator.js run -t api
 ```
 
+## 📡 What the page asks for
+
+A UI assertion covers what the page _showed_. It says nothing about the dozen
+requests behind it, and a page that renders a cached list while its API returns
+500 passes every screen-level check you can write.
+
+```json
+{ "action": "expectNoFailedRequests" }
+{ "action": "expectRequestsUnder", "value": 2000 }
+{ "action": "expectApiCalled", "target": "/api/products" }
+```
+
+In `examples/demoshop` the catalogue page fetches three endpoints, one of which
+returns 500. The screen-level test passes — the list renders — and the network
+test fails naming `/api/reviews → 500`. Both are in the repo.
+
+Network events reach the test process out of band and arrive **later** than the
+page's own `await fetch(...)` resolves, so these assertions wait for the page to
+go quiet first, bounded, because a page that polls never goes quiet at all.
+Without that wait the check silently passed a page with a broken endpoint —
+which is worse than not having the check.
+
+### Endpoints without a spec
+
+```bash
+node packages/cli/bin/test-orchestrator.js observe https://example.com/products -d backend
+```
+
+Loads the page, records what it called, and writes an API test per endpoint.
+Only **healthy** endpoints get one: something that returned 500 while we watched
+is a finding to report, not a baseline to enshrine — writing `expect 500` would
+lock the bug in as expected behaviour. Only `GET` is replayed, and only the
+page's own origin unless you pass `--all-origins`.
+
 ## ▶️ Running
 
 ```bash
@@ -262,9 +303,10 @@ node packages/cli/bin/test-orchestrator.js run -t cases -j 4 --reporter junit --
 ```
 
 Concurrency is per test case; steps within a case stay ordered. Each lane builds
-its runners once and reuses them, so `-j 4` launches four browsers, not one per
-test. Measured on 24 browser tests: **10.2s at `-j 1`, 3.2s at `-j 4`**, same
-results.
+its runner registry once, and the browser runner launches a browser per test
+case for isolation — so `-j 4` means four browsers at a time, not four for the
+whole run. Measured on 24 browser tests: **10.2s at `-j 1`, 3.2s at `-j 4`**,
+same results.
 
 `executeRun` refuses `concurrency > 1` without a `createRunners` factory rather
 than silently sharing one runner: the browser runner owns a single page, and two

@@ -20,6 +20,23 @@ const home = page(
    <a href="/login">Sign in</a> · <a href="/about">About</a>`,
 );
 
+// A page that fetches its data, so the network is worth watching. One of the
+// three calls is deliberately broken: a UI that renders anyway is exactly the
+// case a screen-only assertion misses.
+const catalogue = page(
+  'Catalogue - DemoShop',
+  `<h1>Catalogue</h1><ul id="items"><li>loading…</li></ul>
+   <script>
+     (async () => {
+       const list = document.getElementById('items');
+       const office = await fetch('/api/products?category=office').then((r) => r.json());
+       await fetch('/api/products?category=kitchen');
+       await fetch('/api/reviews').catch(() => {});
+       list.innerHTML = office.map((p) => '<li class="item">' + p.name + '</li>').join('');
+     })();
+   </script>`,
+);
+
 const about = page('About - DemoShop', '<h1>About</h1><p>We sell samples.</p><a href="/">Home</a>');
 
 const login = (error) =>
@@ -67,6 +84,10 @@ function api(url, send) {
     }
     return json(200, PRODUCTS.filter((p) => p.category === category));
   }
+  if (url.pathname === '/api/reviews') {
+    // Stands in for the endpoint that is quietly broken in production.
+    return json(500, { error: 'reviews service unavailable' });
+  }
   const match = /^\/api\/products\/([^/]+)$/.exec(url.pathname);
   if (match) {
     const found = PRODUCTS.find((p) => p.id === match[1]);
@@ -108,6 +129,8 @@ const server = createServer((req, res) => {
       return send(200, home);
     case '/about':
       return send(200, about);
+    case '/catalogue':
+      return send(200, catalogue);
     case '/login':
       return send(200, login(undefined));
     default:

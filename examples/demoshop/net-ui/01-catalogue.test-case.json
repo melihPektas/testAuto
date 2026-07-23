@@ -1,0 +1,28 @@
+{
+  "id": "catalogue-ui",
+  "version": "1.0",
+  "name": "Catalogue page renders its items",
+  "runner": "ui",
+  "steps": [
+    {
+      "id": "goto",
+      "action": "goto",
+      "value": "http://localhost:4700/catalogue"
+    },
+    {
+      "id": "status",
+      "action": "expectStatus",
+      "value": 200
+    },
+    {
+      "id": "loaded",
+      "action": "waitFor",
+      "target": ".item"
+    },
+    {
+      "id": "items",
+      "action": "expectText",
+      "value": "Notebook"
+    }
+  ]
+}
