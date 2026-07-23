@@ -20,3 +20,5 @@ examples/**/.artifacts/
 # Visual regression baselines are generated per environment
 examples/**/.baselines/
 examples/**/visual/
+examples/**/api-tests/
+examples/**/api/

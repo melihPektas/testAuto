@@ -193,3 +193,35 @@ describe('generateApiTests', () => {
     expect(cases.every((c) => !c.name.includes('without'))).toBe(true);
   });
 });
+
+describe('stateful chains', () => {
+  it('does not build a chain without --include-writes', () => {
+    const { cases } = generateApiTests(parseSpec(spec));
+    expect(cases.some((c) => c.name.includes('lifecycle'))).toBe(false);
+  });
+
+  it('links create → read → delete, carrying the created id', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { includeWrites: true });
+    const chain = cases.find((c) => c.name.includes('lifecycle'));
+    expect(chain).toBeDefined();
+    const parsed = JSON.parse(chain?.content ?? '{}') as {
+      steps: { id: string; action: string; target?: string; value?: unknown }[];
+    };
+    const actions = parsed.steps.map((s) => s.action);
+    expect(actions).toEqual([
+      'request',
+      'expectStatusIn',
+      'capture',
+      'request',
+      'expectStatus',
+      'request',
+      'expectStatusIn',
+    ]);
+    // the create posts to the collection
+    expect(parsed.steps[0]?.target).toBe('POST /products');
+    // the id is captured, then used — it did not exist until create returned it
+    expect(parsed.steps[2]?.target).toBe('id = id');
+    expect(parsed.steps[3]?.target).toBe('GET /products/${id}');
+    expect(parsed.steps[5]?.target).toBe('DELETE /products/${id}');
+  });
+});

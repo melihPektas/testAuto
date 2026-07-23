@@ -265,6 +265,16 @@ requests; a generator that quietly fires `DELETE` at whatever host it was
 pointed at is worse than one that generates nothing. Pass `--include-writes`
 when you mean it.
 
+With `--include-writes`, it also builds **stateful chains**: a `POST /things`
+paired with `GET /things/{id}` becomes one test that creates a resource,
+captures the id the create returned, reads it back through that id, and deletes
+it. This is the difference between testing endpoints and testing a resource. On
+the demoshop cart it is stark — the standalone `GET /api/carts/{id}` fails
+because the spec's example id does not exist in an empty collection, while the
+chain passes because it created the id first. The `capture` runner action
+(`"target": "id = id"`) is what carries a value from one response into the next
+request; `${id}` expands in later URLs and bodies.
+
 Tokens are named, not stored: `--auth-env SHOP_TOKEN` emits a
 `Bearer ${SHOP_TOKEN}` header that the runner expands from the environment at
 request time, so the committed test file holds no credential — and the step's

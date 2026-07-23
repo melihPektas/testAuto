@@ -1,7 +1,14 @@
 {
   "openapi": "3.0.3",
-  "info": { "title": "DemoShop API", "version": "1.0.0" },
-  "servers": [{ "url": "http://localhost:4700" }],
+  "info": {
+    "title": "DemoShop API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4700"
+    }
+  ],
   "paths": {
     "/api/health": {
       "get": {
@@ -14,7 +21,12 @@
                 "schema": {
                   "type": "object",
                   "required": ["status"],
-                  "properties": { "status": { "type": "string", "enum": ["up"] } }
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["up"]
+                    }
+                  }
                 }
               }
             }
@@ -30,7 +42,10 @@
             "name": "category",
             "in": "query",
             "required": true,
-            "schema": { "type": "string", "enum": ["office", "kitchen"] }
+            "schema": {
+              "type": "string",
+              "enum": ["office", "kitchen"]
+            }
           }
         ],
         "responses": {
@@ -38,7 +53,12 @@
             "description": "matching products",
             "content": {
               "application/json": {
-                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } }
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
               }
             }
           }
@@ -51,7 +71,10 @@
           "name": "id",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "example": "1" }
+          "schema": {
+            "type": "string",
+            "example": "1"
+          }
         }
       ],
       "get": {
@@ -60,10 +83,85 @@
           "200": {
             "description": "the product",
             "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Product" } }
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
             }
           },
-          "404": { "description": "no such product" }
+          "404": {
+            "description": "no such product"
+          }
+        }
+      }
+    },
+    "/api/carts": {
+      "post": {
+        "operationId": "createCart",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/carts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "cart-1"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getCart",
+        "responses": {
+          "200": {
+            "description": "the cart",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "missing"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCart",
+        "responses": {
+          "204": {
+            "description": "deleted"
+          },
+          "404": {
+            "description": "missing"
+          }
         }
       }
     }
@@ -74,10 +172,44 @@
         "type": "object",
         "required": ["id", "name", "price", "category"],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "price": { "type": "number" },
-          "category": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          }
+        }
+      },
+      "CartInput": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Cart": {
+        "type": "object",
+        "required": ["id", "items"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     }

@@ -66,12 +66,35 @@ const PRODUCTS = [
   { id: '3', name: 'Desk lamp', price: 39.9, category: 'office' },
 ];
 
-/** Returns true when it handled the request. */
-function api(url, send) {
-  const json = (status, body) => {
-    send(status, JSON.stringify(body), 'application/json');
+// An in-memory collection with a real lifecycle, so a stateful chain
+// (POST → GET → DELETE, carrying the created id) has something to run against.
+const CARTS = new Map();
+let cartSeq = 0;
+
+/** Returns true when it handled the request. `method` and `body` drive writes. */
+function api(url, send, method = 'GET', body = undefined) {
+  const json = (status, payload) => {
+    send(status, JSON.stringify(payload), 'application/json');
     return true;
   };
+
+  if (method === 'POST' && url.pathname === '/api/carts') {
+    cartSeq += 1;
+    const id = `cart-${cartSeq}`;
+    const cart = { id, items: body?.items ?? [] };
+    CARTS.set(id, cart);
+    return json(201, cart);
+  }
+  const cartMatch = /^\/api\/carts\/([^/]+)$/.exec(url.pathname);
+  if (cartMatch) {
+    const id = cartMatch[1];
+    if (method === 'GET') {
+      return CARTS.has(id) ? json(200, CARTS.get(id)) : json(404, { error: 'no such cart' });
+    }
+    if (method === 'DELETE') {
+      return CARTS.delete(id) ? send(204, '', 'application/json') || true : json(404, { error: 'no such cart' });
+    }
+  }
 
   if (url.pathname === '/api/health') {
     return json(200, { status: 'up' });
@@ -103,11 +126,31 @@ const server = createServer((req, res) => {
     res.end(body);
   };
 
-  if (url.pathname.startsWith('/api/') && req.method === 'GET') {
-    if (api(url, send)) {
+  if (url.pathname.startsWith('/api/')) {
+    if (req.method === 'GET' || req.method === 'DELETE') {
+      if (api(url, send, req.method)) {
+        return;
+      }
+      return send(404, JSON.stringify({ error: 'not found' }), 'application/json');
+    }
+    if (req.method === 'POST') {
+      let raw = '';
+      req.on('data', (chunk) => {
+        raw += chunk;
+      });
+      req.on('end', () => {
+        let parsed;
+        try {
+          parsed = raw === '' ? {} : JSON.parse(raw);
+        } catch {
+          return send(400, JSON.stringify({ error: 'invalid JSON' }), 'application/json');
+        }
+        if (!api(url, send, 'POST', parsed)) {
+          send(404, JSON.stringify({ error: 'not found' }), 'application/json');
+        }
+      });
       return;
     }
-    return send(404, JSON.stringify({ error: 'not found' }), 'application/json');
   }
 
   if (req.method === 'POST' && url.pathname === '/login') {

@@ -19,6 +19,10 @@ beforeAll(async () => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
+    if (req.method === 'POST' && req.url === '/create')
+      return json(201, { id: 'abc-123', name: 'new' });
+    if (req.url === '/item/abc-123') return json(200, { id: 'abc-123', name: 'new', ready: true });
+    if (/^\/item\//.test(req.url ?? '')) return json(404, { error: 'no such item' });
     if (req.url === '/product') return json(200, { id: '1', name: 'Blue mug', price: 12.5 });
     if (req.url === '/bad-shape') return json(200, { id: 1 });
     if (req.url === '/not-json') {
@@ -147,5 +151,38 @@ describe('evidence on an api failure', () => {
     expect(String(evidence['request'])).toContain('GET ');
     expect(evidence['status']).toBe(418);
     expect(String(evidence['excerpt'])).toContain('no coffee');
+  });
+});
+
+describe('capture — stateful chains', () => {
+  it('carries a value from one response into the next request', async () => {
+    const steps = await run([
+      { id: 'create', action: 'request', target: 'POST /create' },
+      { id: 'status', action: 'expectStatus', value: 201 },
+      { id: 'grab', action: 'capture', target: 'id = id' },
+      // the id did not exist until the POST returned it
+      { id: 'fetch', action: 'request', target: 'GET /item/${id}' },
+      { id: 'ok', action: 'expectStatus', value: 200 },
+      { id: 'body', action: 'expectBody', value: 'ready' },
+    ]);
+    expect(steps.every((s) => s.status === 'pass')).toBe(true);
+    expect(steps[2]?.output).toContain('captured id = abc-123');
+  });
+
+  it('fails clearly when there is nothing at the path', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /product' },
+      { id: 'grab', action: 'capture', target: 'missing = does.not.exist' },
+    ]);
+    expect(steps[1]?.status).toBe('fail');
+    expect(steps[1]?.error?.message).toContain('nothing to capture');
+  });
+
+  it('refuses to capture from a non-JSON response', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /not-json' },
+      { id: 'grab', action: 'capture', target: 'x = y' },
+    ]);
+    expect(steps[1]?.error?.message).toContain('not JSON');
   });
 });

@@ -42,16 +42,36 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
   let lastBody = '';
   let lastUrl = '';
   const extraHeaders: Record<string, string> = {};
+  // Values pulled out of earlier responses, so one request can feed the next —
+  // a POST returns an id, a later GET uses it. This is what makes a chain of
+  // requests a stateful test rather than a set of independent ones.
+  const captured: Record<string, string> = {};
 
   /**
-   * Expand `${VAR}` from the run environment. A test case can then name the
-   * variable holding a token instead of carrying the token itself — the file is
-   * committed, the credential is not.
+   * Expand `${VAR}` from captured values first, then the run environment. A
+   * test case names the variable holding a token rather than carrying it (the
+   * file is committed, the credential is not), and names a captured id rather
+   * than hard-coding one that will not exist on the next run.
    */
   const expand = (value: string, env: Record<string, string>): string =>
-    value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, name: string) => {
-      return env[name] ?? process.env[name] ?? whole;
+    value.replace(/\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g, (whole, name: string) => {
+      return captured[name] ?? env[name] ?? process.env[name] ?? whole;
     });
+
+  /** Read a dotted path (`data.id`, `items.0.id`) out of a parsed body. */
+  const readPath = (body: unknown, path: string): unknown => {
+    let node = body;
+    for (const key of path.split('.')) {
+      if (Array.isArray(node)) {
+        node = node[Number(key)];
+      } else if (typeof node === 'object' && node !== null) {
+        node = (node as Record<string, unknown>)[key];
+      } else {
+        return undefined;
+      }
+    }
+    return node;
+  };
 
   return {
     kind: 'runner',
@@ -69,12 +89,15 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
             const spaceIdx = spec.indexOf(' ');
             const method = (spaceIdx === -1 ? 'GET' : spec.slice(0, spaceIdx)).toUpperCase();
             const rawUrl = spaceIdx === -1 ? spec : spec.slice(spaceIdx + 1);
-            const url = resolveUrl(rawUrl.trim(), options.baseUrl);
+            const url = resolveUrl(expand(rawUrl.trim(), ctx.env), options.baseUrl);
             const headers: Record<string, string> = {
               'content-type': 'application/json',
               ...extraHeaders,
             };
-            const body = step?.value === undefined ? undefined : JSON.stringify(step.value);
+            // Expand ${...} inside the body too, so a chained request can post a
+            // value it captured from an earlier response.
+            const body =
+              step?.value === undefined ? undefined : expand(JSON.stringify(step.value), ctx.env);
             const response = await fetch(url, { method, headers, body, signal: ctx.signal });
             lastStatus = response.status;
             lastBody = await response.text();
@@ -93,6 +116,32 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
             extraHeaders[name.toLowerCase()] = expand(text(step?.value), ctx.env);
             // The value may be a credential, so the output names the header only.
             return { status: 'pass', durationMs: Date.now() - start, output: `set ${name}` };
+          }
+          case 'capture': {
+            // target = "var = path", or target = "path" with the name in value.
+            const spec = typeof step?.target === 'string' ? step.target : '';
+            const eq = spec.indexOf('=');
+            const varName = (eq === -1 ? text(step?.value) : spec.slice(0, eq)).trim();
+            const path = (eq === -1 ? spec : spec.slice(eq + 1)).trim();
+            if (varName === '' || path === '') {
+              throw new Error('capture needs "name = path" (e.g. "id = id")');
+            }
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(lastBody);
+            } catch {
+              throw new Error('cannot capture: the last response was not JSON');
+            }
+            const found = readPath(parsed, path);
+            if (found === undefined || found === null) {
+              throw new Error(`nothing to capture at "${path}" in the response`);
+            }
+            captured[varName] = typeof found === 'string' ? found : JSON.stringify(found);
+            return {
+              status: 'pass',
+              durationMs: Date.now() - start,
+              output: `captured ${varName} = ${captured[varName]}`,
+            };
           }
           case 'expectStatusIn': {
             const raw = step?.value;

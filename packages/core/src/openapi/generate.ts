@@ -168,5 +168,87 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
     }
   }
 
+  // 4) Stateful chains: a resource you POST and then GET is only really tested
+  //    end to end, with the created id carried across. This is where an id that
+  //    "does not exist until the POST returns it" comes from.
+  if (options.includeWrites === true) {
+    for (const chain of resourceChains(spec.operations)) {
+      push(slug(`${opName(chain.create)}-lifecycle`), `${chain.label} lifecycle`, [
+        ...auth,
+        {
+          id: 'create',
+          action: 'request',
+          target: buildTarget(chain.create),
+          value: chain.create.requestBody ?? {},
+        },
+        { id: 'created', action: 'expectStatusIn', value: chain.create.successStatuses },
+        { id: 'grab', action: 'capture', target: `${chain.idField} = ${chain.idField}` },
+        {
+          id: 'read',
+          action: 'request',
+          target: `GET ${chain.itemPath.replace(`{${chain.pathParam}}`, `\${${chain.idField}}`)}`,
+        },
+        { id: 'read-ok', action: 'expectStatus', value: 200 },
+        ...(chain.remove !== undefined
+          ? [
+              {
+                id: 'remove',
+                action: 'request',
+                target: `DELETE ${chain.itemPath.replace(`{${chain.pathParam}}`, `\${${chain.idField}}`)}`,
+              },
+              { id: 'removed', action: 'expectStatusIn', value: chain.remove.successStatuses },
+            ]
+          : []),
+      ]);
+    }
+  }
+
   return { cases, skipped };
+}
+
+interface ResourceChain {
+  readonly label: string;
+  readonly create: Operation;
+  readonly read: Operation;
+  readonly remove: Operation | undefined;
+  readonly itemPath: string;
+  readonly pathParam: string;
+  /** The field on the created resource that names it (usually `id`). */
+  readonly idField: string;
+}
+
+/**
+ * Pair `POST /things` with `GET /things/{id}` (and `DELETE` when present) so a
+ * created resource can be read back through the id the create returned. The
+ * pairing is by path shape, which is how a spec expresses the relationship even
+ * when it does not spell it out.
+ */
+function resourceChains(operations: Operation[]): ResourceChain[] {
+  const chains: ResourceChain[] = [];
+  for (const read of operations) {
+    if (read.method !== 'get') {
+      continue;
+    }
+    const match = /^(.*)\/\{([^/}]+)\}$/.exec(read.path);
+    if (match === null) {
+      continue;
+    }
+    const collection = match[1] ?? '';
+    const pathParam = match[2] ?? 'id';
+    const create = operations.find((o) => o.method === 'post' && o.path === collection);
+    if (create === undefined) {
+      continue;
+    }
+    const remove = operations.find((o) => o.method === 'delete' && o.path === read.path);
+    chains.push({
+      label: `${collection} (create → read${remove !== undefined ? ' → delete' : ''})`,
+      create,
+      read,
+      remove,
+      itemPath: read.path,
+      pathParam,
+      idField: pathParam,
+    });
+  }
+  return chains;
 }
