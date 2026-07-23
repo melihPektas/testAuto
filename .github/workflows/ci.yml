@@ -32,6 +32,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # The browser package's tests drive a real Chromium via Playwright.
+      - name: Install Playwright browsers
+        run: pnpm --filter @test-orchestrator/browser exec playwright install --with-deps chromium
+
       - name: Test
         run: pnpm test
 
