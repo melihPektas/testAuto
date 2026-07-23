@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 import {
   applyRepair,
   authorSite,
+  changesetFromGithub,
+  changesetFromGitlab,
   failuresFromReport,
+  jiraTrigger,
+  planReview,
   llmOptionsFor,
   matrixSite,
   proposeRepair,
@@ -500,6 +504,59 @@ async function handleRepair(res: ServerResponse, body: unknown): Promise<void> {
   });
 }
 
+/**
+ * Classify an incoming change and report what should be tested. This is the
+ * webhook target: point a Jira automation, a GitLab MR hook or a GitHub PR hook
+ * at it and it answers backend / ui / both, plus the per-file reasoning.
+ *
+ * It does not reach back out to fetch a diff — a Jira webhook carries no diff,
+ * only a link — so a Jira payload yields the issue and its links for a human or
+ * a follow-up call to act on, while a GitLab/GitHub payload that already
+ * contains the changed files is classified in full.
+ */
+async function handleReview(res: ServerResponse, body: unknown, configPath: string): Promise<void> {
+  const root = (body ?? {}) as Record<string, unknown>;
+
+  // A Jira webhook is shaped around an issue and carries no file list.
+  if (typeof root['issue'] === 'object' && root['issue'] !== null) {
+    const trigger = jiraTrigger(root);
+    sendJson(res, 200, {
+      source: 'jira',
+      issue: trigger.issueKey,
+      summary: trigger.summary,
+      status: trigger.status,
+      links: trigger.links,
+      note: 'Jira carries no diff; fetch the linked MR/PR and post its changes here to get a test plan',
+    });
+    return;
+  }
+
+  const changeset = Array.isArray(root['changes'])
+    ? changesetFromGitlab(root)
+    : Array.isArray(root['files'])
+      ? changesetFromGithub(
+          root['files'],
+          typeof root['title'] === 'string' ? root['title'] : undefined,
+        )
+      : undefined;
+
+  if (changeset === undefined || changeset.files.length === 0) {
+    sendJson(res, 400, {
+      error: 'send a GitLab changes payload, a GitHub files payload, or a Jira issue',
+    });
+    return;
+  }
+
+  const llm = await readLlmConfig(configPath);
+  const plan = await planReview(changeset.files, llmOptionsFor('triage', llm));
+  sendJson(res, 200, {
+    source: changeset.source,
+    title: changeset.title,
+    surface: plan.surface,
+    files: plan.files,
+  });
+}
+
 export function createDashboardServer(): ReturnType<typeof createServer> {
   return createServer((req, res) => {
     void (async (): Promise<void> => {
@@ -562,6 +619,14 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
         }
         if (req.method === 'GET' && url.pathname === '/api/artifact') {
           await handleArtifact(res, url.searchParams.get('path') ?? '');
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/api/review') {
+          const configPath = resolve(
+            process.cwd(),
+            url.searchParams.get('configPath') ?? 'test-orchestrator.config.json',
+          );
+          await handleReview(res, await readBody(req), configPath);
           return;
         }
         if (req.method === 'POST' && url.pathname === '/api/repair') {

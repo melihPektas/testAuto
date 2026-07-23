@@ -89,10 +89,20 @@ DOM dispose.
 - **Self-healing, narrowly** — repair a stale selector, verify it by re-running,
   and only then offer to write it. It cannot weaken an assertion.
 
+**Change review**
+
+- **Review a change** — given a diff, a GitLab MR or a GitHub PR, decide whether
+  it is `backend`, `ui` or `both` from the changed files (path rules first, the
+  model only for the genuinely ambiguous ones), then test that surface against a
+  running environment: authored UI tests for the front end, spec-derived API
+  tests for the back end, reported separately.
+- **Webhook target** — a Jira automation, GitLab MR hook or GitHub PR hook can
+  POST to the dashboard and get the plan back.
+
 **Interfaces**
 
-- **CLI** — `init`, `generate`, `author`, `matrix`, `api`, `observe`, `run`,
-  `triage`, `repair`, `export`, `report`, `plugin`.
+- **CLI** — `init`, `generate`, `author`, `matrix`, `api`, `observe`, `review`,
+  `run`, `triage`, `repair`, `export`, `report`, `plugin`.
 - **MCP server** — `list_tests`, `run_tests`, `generate_tests`, `test_url`,
   `explore_site`, `author_tests`, `triage_failures`, `ingest_project`.
 - **Web dashboard** — point it at a URL and it generates tests, runs them in
@@ -295,6 +305,49 @@ Only **healthy** endpoints get one: something that returned 500 while we watched
 is a finding to report, not a baseline to enshrine — writing `expect 500` would
 lock the bug in as expected behaviour. Only `GET` is replayed, and only the
 page's own origin unless you pass `--all-origins`.
+
+## 🔀 Reviewing a change
+
+When a task reaches review, the question is what to test. `review` answers it
+from the changed files and then does it.
+
+```bash
+# from a GitLab merge-request changes payload
+node packages/cli/bin/test-orchestrator.js review --gitlab mr.json \
+  --url https://review-app.example.com --spec https://review-app.example.com/openapi.json
+
+# or straight from git, against a running environment
+git diff --numstat main... | node packages/cli/bin/test-orchestrator.js review --diff \
+  --url http://localhost:3000 --spec http://localhost:3000/openapi.json
+```
+
+Files are classified by path first — a `.tsx` under `components/` is UI, a file
+under `routes/` is backend, a lockfile is neither — and only the genuinely
+ambiguous ones (a shared `lib/pricing.ts`) go to the model, which defaults them
+to `both` rather than dropping them: a change tested on the wrong surface is
+worse than one tested on an extra surface.
+
+The plan then drives the testing. A `both` change authors UI tests against
+`--url` and generates API tests from `--spec`, runs each, and reports them
+separately:
+
+```
+ui       src/pages/Catalogue.tsx  (rule: a React component)
+backend  api/routes/products.ts   (rule: an API layer)
+neither  README.md                (rule: documentation)
+this change is: BOTH
+[PASS] backend: 4 passed, 0 failed, 0 flaky
+[FAIL] UI: 2 passed, 4 failed
+```
+
+### As a webhook
+
+The dashboard's `POST /api/review` takes the same payloads. A Jira webhook
+carries no diff — only a link — so it comes back with the issue and its links
+for a follow-up call; a GitLab or GitHub payload that already lists the changed
+files comes back with the full plan. Jira → GitLab/GitHub → plan is the chain;
+this project does not hold the credentials to walk it for you, so the fetch
+between the links is yours to wire.
 
 ## ▶️ Running
 

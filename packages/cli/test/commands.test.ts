@@ -32,6 +32,7 @@ describe('CLI Commands Registration', () => {
       'plugin',
       'repair',
       'report',
+      'review',
       'run',
       'triage',
     ]);

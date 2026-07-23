@@ -5,3 +5,5 @@ export * from './matrix.js';
 export * from './triage.js';
 export * from './repair.js';
 export * from './provider.js';
+export * from './review.js';
+export * from './changeset.js';

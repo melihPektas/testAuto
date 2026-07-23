@@ -74,6 +74,44 @@ describe('dashboard server', () => {
     expect(summary.status).toBe('pass');
   });
 
+  it('classifies a GitLab merge request into a test plan', async () => {
+    const res = await fetch(`${baseUrl}/api/review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: 'fix checkout',
+        changes: [
+          { new_path: 'src/pages/Cart.tsx', old_path: 'src/pages/Cart.tsx' },
+          { new_path: 'api/routes/cart.ts', old_path: 'api/routes/cart.ts' },
+        ],
+      }),
+    });
+    const body = (await res.json()) as { surface: string; files: { surface: string }[] };
+    expect(body.surface).toBe('both');
+    expect(body.files.map((f) => f.surface).sort()).toEqual(['backend', 'ui']);
+  });
+
+  it('answers a Jira webhook with the issue and its links, not a plan', async () => {
+    const res = await fetch(`${baseUrl}/api/review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        issue: {
+          key: 'SHOP-9',
+          fields: {
+            summary: 'Cart total wrong',
+            status: { name: 'In Review' },
+            description: 'MR: https://gitlab.com/acme/shop/-/merge_requests/8',
+          },
+        },
+      }),
+    });
+    const body = (await res.json()) as { source: string; issue: string; links: string[] };
+    expect(body.source).toBe('jira');
+    expect(body.issue).toBe('SHOP-9');
+    expect(body.links).toContain('https://gitlab.com/acme/shop/-/merge_requests/8');
+  });
+
   it('exposes the configured runners via /api/config', async () => {
     const res = await fetch(
       `${baseUrl}/api/config?path=${encodeURIComponent(join(dir, 'test-orchestrator.config.json'))}`,

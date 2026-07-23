@@ -4,10 +4,14 @@ import { join, resolve } from 'node:path';
 import {
   applyRepair,
   authorSite,
+  changesetFromGithub,
+  changesetFromGitlab,
+  changesetFromNumstat,
   describeProvider,
   llmOptionsFor,
   failuresFromReport,
   matrixSite,
+  planReview,
   proposeRepair,
   repairIsSafe,
   triageFailure,
@@ -41,6 +45,7 @@ import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
 
+import type { Changeset } from '@test-orchestrator/agent';
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { LlmConfig, TestCase } from '@test-orchestrator/schema';
 import type { Command } from 'commander';
@@ -58,6 +63,61 @@ async function llmConfig(configPath?: string): Promise<LlmConfig | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** Assemble a changeset from whichever input flag was given. */
+async function readChangeset(opts: Record<string, unknown>): Promise<Changeset> {
+  if (opts['diff'] === true) {
+    return changesetFromNumstat(await readStdin());
+  }
+  if (typeof opts['gitlab'] === 'string') {
+    return changesetFromGitlab(
+      JSON.parse(await readFile(resolve(process.cwd(), opts['gitlab']), 'utf8')),
+    );
+  }
+  if (typeof opts['github'] === 'string') {
+    return changesetFromGithub(
+      JSON.parse(await readFile(resolve(process.cwd(), opts['github']), 'utf8')),
+    );
+  }
+  if (typeof opts['files'] === 'string') {
+    const files = opts['files']
+      .split(',')
+      .map((f) => ({ path: f.trim() }))
+      .filter((f) => f.path !== '');
+    return { files, title: undefined, source: 'cli', targetUrl: undefined };
+  }
+  return { files: [], title: undefined, source: 'none', targetUrl: undefined };
+}
+
+/** Run one generated suite through the engine and return its summary. */
+async function runSuite(
+  testsDir: string,
+  opts: Record<string, unknown>,
+): Promise<{ passed: number; failed: number; flaky: number }> {
+  const configPath = typeof opts['config'] === 'string' ? opts['config'] : undefined;
+  const { config } = await resolveConfig(configPath);
+  const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json')).sort();
+  const testCases: unknown[] = [];
+  for (const file of files) {
+    testCases.push(JSON.parse(await readFile(join(testsDir, file), 'utf8')));
+  }
+  const runners = buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+  const summary = await executeRun({
+    config,
+    testCases: testCases as RunOptions['testCases'],
+    runners,
+    createRunners: () => buildRunnerRegistry(config.runners, { browser: browserRunnerFactory }),
+  });
+  return { passed: summary.passed, failed: summary.failed, flaky: summary.flaky };
 }
 
 /** Log which provider a role will use, without ever printing the key. */
@@ -344,6 +404,105 @@ export function registerCommands(program: Command): void {
         logger.info(`wrote ${String(written.length)} test case(s) to ${dir}/observed/`);
       } catch (err) {
         logger.error(`failed to observe: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('review')
+    .description(
+      'Review a change: decide if it is backend, UI or both, and test accordingly against a running environment',
+    )
+    .option('--diff', 'read changed files from `git diff --numstat` on stdin')
+    .option('--gitlab <file>', 'a GitLab merge-request changes payload (JSON file)')
+    .option('--github <file>', 'a GitHub pull-request files payload (JSON file)')
+    .option('--files <list>', 'comma-separated changed file paths')
+    .option('--url <url>', 'base URL of the running environment to test the UI against')
+    .option('--spec <spec>', 'OpenAPI spec (url or file) to test the backend against')
+    .option('-d, --dir <dir>', 'where generated tests land', '.review')
+    .option('-c, --config <path>', 'config for the run step')
+    .option('-m, --model <model>', 'model id for classifying ambiguous files')
+    .option('-u, --llm-url <url>', 'OpenAI-compatible base URL')
+    .action(async (opts: Record<string, unknown>) => {
+      try {
+        const changeset = await readChangeset(opts);
+        if (changeset.files.length === 0) {
+          logger.error('no changed files to review');
+          process.exitCode = 1;
+          return;
+        }
+        logger.info(
+          `reviewing ${String(changeset.files.length)} changed file(s)${changeset.title !== undefined ? ` — ${changeset.title}` : ''}`,
+        );
+
+        const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
+        const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
+        const plan = await planReview(changeset.files, {
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+        });
+
+        for (const file of plan.files) {
+          logger.info(`  ${file.surface.padEnd(8)} ${file.path}  (${file.source}: ${file.reason})`);
+        }
+        logger.info(`this change is: ${plan.surface.toUpperCase()}`);
+
+        const url = typeof opts['url'] === 'string' ? opts['url'] : changeset.targetUrl;
+        const spec = typeof opts['spec'] === 'string' ? opts['spec'] : undefined;
+        const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.review';
+        const wantUi = plan.surface === 'ui' || plan.surface === 'both';
+        const wantBackend = plan.surface === 'backend' || plan.surface === 'both';
+
+        const suites: { label: string; testsDir: string }[] = [];
+
+        if (wantUi) {
+          if (url === undefined) {
+            logger.warn('UI is affected but no --url was given; skipping the UI tests');
+          } else {
+            logger.info(`authoring UI tests against ${url}`);
+            const site = await authorSite(url, {
+              ...(model !== undefined ? { model } : {}),
+              ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+              maxPages: 2,
+            });
+            await writeAuthored(join(dir, 'ui'), site.cases);
+            suites.push({ label: 'UI', testsDir: join(dir, 'ui', 'authored') });
+          }
+        }
+
+        if (wantBackend) {
+          if (spec === undefined) {
+            logger.warn('backend is affected but no --spec was given; skipping the API tests');
+          } else {
+            logger.info(`generating API tests from ${spec}`);
+            const api = await loadSpec(spec);
+            const { cases } = generateApiTests(api);
+            await writeAuthored(join(dir, 'backend'), cases);
+            suites.push({ label: 'backend', testsDir: join(dir, 'backend', 'api') });
+          }
+        }
+
+        // Report each surface the plan asked for and could run.
+        let anyFailed = false;
+        for (const suite of suites) {
+          const summary = await runSuite(suite.testsDir, opts);
+          const status = summary.failed > 0 ? 'FAIL' : 'PASS';
+          logger.info(
+            `[${status}] ${suite.label}: ${String(summary.passed)} passed, ${String(summary.failed)} failed, ${String(summary.flaky)} flaky`,
+          );
+          if (summary.failed > 0) {
+            anyFailed = true;
+          }
+        }
+
+        if (suites.length === 0) {
+          logger.warn('nothing was testable for this change with the inputs given');
+        }
+        if (anyFailed) {
+          process.exitCode = 1;
+        }
+      } catch (err) {
+        logger.error(`failed to review: ${(err as Error).message}`);
         process.exitCode = 1;
       }
     });
