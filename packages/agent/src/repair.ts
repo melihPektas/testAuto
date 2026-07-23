@@ -217,7 +217,7 @@ export function repairIsSafe(
         return `a repair may only change the failing step, but step ${String(i + 1)} changed`;
       }
       if (key !== 'target') {
-        return `a repair may only change a step's target, but "${key}" changed`;
+        return `a repair may only change the target of a step, but "${key}" changed`;
       }
     }
   }

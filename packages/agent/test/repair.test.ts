@@ -170,7 +170,7 @@ describe('applying a repair', () => {
       ...testCase,
       steps: testCase.steps.map((s, i) => (i === 3 ? { ...s, action: 'audit' } : s)),
     } as TestCase;
-    expect(repairIsSafe(testCase, weakened, repair)).toContain("only change a step's target");
+    expect(repairIsSafe(testCase, weakened, repair)).toContain('only change the target of a step');
   });
 
   it('catches a repair that touched an unrelated step', () => {
