@@ -34,6 +34,7 @@ import {
   createTemplateGenerator,
   createJsonReporter,
   createJunitReporter,
+  createHtmlReporter,
   buildReporters,
   buildGeneratorRegistry,
   loadPlugins,
@@ -823,7 +824,7 @@ export function registerCommands(program: Command): void {
     .description('Load a config, discover test cases and execute them')
     .option('-c, --config <path>', 'path to config file')
     .option('-t, --tests <dir>', 'directory holding *.test-case.json files', '.')
-    .option('-r, --reporter <type>', 'also write a file report: json or junit')
+    .option('-r, --reporter <type>', 'also write a file report: json, junit or html')
     .option('-o, --out <path>', 'output path for the file reporter')
     .option('-j, --concurrency <n>', 'run this many test cases at once', '1')
     .action(async (opts: Record<string, unknown>) => {
@@ -899,8 +900,10 @@ export function registerCommands(program: Command): void {
             reporters.push(createJsonReporter(resolvedOut));
           } else if (reporterType === 'junit') {
             reporters.push(createJunitReporter(resolvedOut));
+          } else if (reporterType === 'html') {
+            reporters.push(createHtmlReporter(resolvedOut, resolve(process.cwd(), '.artifacts')));
           } else {
-            logger.error(`unknown reporter "${reporterType}" (use json or junit)`);
+            logger.error(`unknown reporter "${reporterType}" (use json, junit or html)`);
             process.exitCode = 1;
             return;
           }

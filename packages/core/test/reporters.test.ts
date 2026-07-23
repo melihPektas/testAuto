@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { createHtmlReporter } from '../src/reporters/html-reporter.js';
 import { createJsonReporter } from '../src/reporters/json-reporter.js';
 import { createJunitReporter } from '../src/reporters/junit-reporter.js';
 
@@ -137,5 +138,29 @@ describe('createJunitReporter with evidence', () => {
     const xml = await readFile(out, 'utf8');
     expect(xml).not.toContain('<system-out>');
     expect(xml).toContain('message="boom"');
+  });
+});
+
+describe('createHtmlReporter', () => {
+  it('writes a self-contained report with stats and evidence', async () => {
+    const out = join(dir, 'report.html');
+    // no artifacts dir on disk, so screenshots are simply omitted (not crashed)
+    const reporter = createHtmlReporter(out, join(dir, 'nope'));
+    await feed(reporter, [
+      result('passing one', 'pass'),
+      failWithEvidence('failing one', {
+        url: 'https://shop.test/account',
+        targetCount: 0,
+        similarSelectors: ['.welcome-banner'],
+      }),
+    ]);
+    const html = await readFile(out, 'utf8');
+    expect(html).toContain('<!doctype html>');
+    expect(html).toContain('>2</div><div class="k">total');
+    expect(html).toContain('>1</div><div class="k">passed');
+    expect(html).toContain('>1</div><div class="k">failed');
+    // the failure's evidence is rendered
+    expect(html).toContain('.welcome-banner');
+    expect(html).toContain('failing one');
   });
 });
