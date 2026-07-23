@@ -102,3 +102,51 @@ describe('failure evidence', () => {
     expect(saved['url']).toContain(baseUrl);
   }, 60_000);
 });
+
+describe('evidence when the engine times the step out', () => {
+  it('still captures the page, which is when it matters most', async () => {
+    const runners = createRunnerRegistry();
+    runners.register(createBrowserRunner('ui'));
+    const summary = await executeRun({
+      config: {
+        version: '1.0',
+        name: 'evidence',
+        runners: [{ name: 'ui', type: 'browser' }],
+      } as unknown as RunOptions['config'],
+      testCases: [
+        {
+          id: 'times-out',
+          version: '1.0',
+          name: 'waits for something that never arrives',
+          runner: 'ui',
+          steps: [
+            { id: 'goto', action: 'goto', value: baseUrl },
+            // waitFor's own budget is 60s, so the engine's 2s timeout fires first
+            {
+              id: 'never',
+              action: 'waitFor',
+              target: '.welcome-message',
+              value: 60000,
+              timeout: 2000,
+            },
+          ],
+        },
+      ] as unknown as RunOptions['testCases'],
+      runners,
+      workspace: {
+        root: artifacts,
+        artifacts,
+        temp: artifacts,
+        resolve: (p: string) => join(artifacts, p),
+      },
+    });
+
+    const failing = summary.results[0]?.steps.find((s) => s.status === 'fail');
+    expect(failing?.error?.message).toContain('timed out');
+    const evidence = (failing?.evidence ?? {}) as Record<string, unknown>;
+    expect(evidence['title']).toBe('Sign in');
+    expect(evidence['targetCount']).toBe(0);
+    expect(evidence['similarSelectors']).toContain('.error-message');
+    expect(String(evidence['screenshot'])).toMatch(/\.png$/);
+  }, 60_000);
+});

@@ -35,6 +35,16 @@ export interface Runner {
   readonly type: string;
   init?(ctx: RunContext): Promise<void> | void;
   runStep(ctx: RunContext): Promise<StepResult>;
+  /**
+   * Describe the world at the moment a step failed *outside* the runner's own
+   * control — an engine-level timeout or an abort. `runStep` never returns in
+   * that case, so its own error handling cannot run, and the failure with the
+   * least explanation ends up with the least evidence.
+   *
+   * Best-effort: the engine ignores anything thrown here, and gives up on it
+   * after a few seconds so a hung page cannot hold up the run.
+   */
+  captureFailure?(ctx: RunContext): Promise<Record<string, unknown> | undefined>;
   dispose?(ctx: RunContext): Promise<void> | void;
 }
 

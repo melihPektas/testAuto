@@ -276,6 +276,21 @@ Artifacts land under the workspace's `.artifacts/<test-case-id>/`:
 The raw DOM is deliberately not captured: far too large for a model, and almost
 none of it bears on the failure.
 
+Evidence is captured for engine-level timeouts too, which is where it matters
+most and where it is hardest to get: `runStep` never returns, so the runner's own
+error handling cannot run. The engine asks the runner to describe the failure
+instead, through an optional `captureFailure`, budgeted at 8 seconds so a hung
+page cannot hold up the run.
+
+The difference is not cosmetic. The same timed-out step, triaged twice:
+
+| evidence | verdict       | reason                                                            |
+| -------- | ------------- | ----------------------------------------------------------------- |
+| without  | `environment` | "the page did not load or render the expected element"            |
+| with     | `test-bug`    | "the page rendered the login form instead of the dashboard panel" |
+
+The first sends you to check your network. The second is correct.
+
 A model that is slow, unreachable or off-contract yields a low-confidence result
 rather than an exception. Triage must never break the run that produced the
 failure.

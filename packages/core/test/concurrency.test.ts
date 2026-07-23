@@ -192,3 +192,101 @@ describe('reports under concurrency', () => {
     expect(seen).not.toEqual(captured);
   });
 });
+
+describe('evidence on an engine-level failure', () => {
+  const hangingRunner = (captured: { calls: number }): RunnerRegistry => {
+    const r = createRunnerRegistry();
+    r.register({
+      name: 'slow',
+      // never settles: the engine's timeout is what ends this step
+      runStep: () => new Promise<StepResult>(() => undefined),
+      captureFailure: async () => {
+        captured.calls += 1;
+        return { url: 'https://shop.test/checkout', targetCount: 0 };
+      },
+    });
+    return r;
+  };
+
+  it('asks the runner what happened when it times the step out', async () => {
+    const captured = { calls: 0 };
+    const summary = await executeRun({
+      config,
+      testCases: [
+        {
+          id: 'hangs',
+          version: '1.0',
+          name: 'hangs forever',
+          runner: 'slow',
+          timeout: 100,
+          steps: [{ id: 's', action: 'wait' }],
+        },
+      ] as unknown as RunOptions['testCases'],
+      runners: hangingRunner(captured),
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(captured.calls).toBe(1);
+    // the whole point: the failure with the least explanation still gets evidence
+    expect(summary.results[0]?.steps[0]?.evidence).toEqual({
+      url: 'https://shop.test/checkout',
+      targetCount: 0,
+    });
+  });
+
+  it('does not let a hanging capture hold up the run', async () => {
+    const registry = createRunnerRegistry();
+    registry.register({
+      name: 'slow',
+      runStep: () => new Promise<StepResult>(() => undefined),
+      captureFailure: () => new Promise<undefined>(() => undefined),
+    });
+
+    const started = Date.now();
+    const summary = await executeRun({
+      config,
+      testCases: [
+        {
+          id: 'hangs',
+          version: '1.0',
+          name: 'hangs forever',
+          runner: 'slow',
+          timeout: 100,
+          steps: [{ id: 's', action: 'wait' }],
+        },
+      ] as unknown as RunOptions['testCases'],
+      runners: registry,
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(summary.results[0]?.steps[0]?.evidence).toBeUndefined();
+    // capture is budgeted at 8s; without the budget this would never return
+    expect(Date.now() - started).toBeLessThan(11_000);
+  }, 20_000);
+
+  it('survives a runner that throws while describing the failure', async () => {
+    const registry = createRunnerRegistry();
+    registry.register({
+      name: 'slow',
+      runStep: () => new Promise<StepResult>(() => undefined),
+      captureFailure: () => Promise.reject(new Error('the page is gone')),
+    });
+
+    const summary = await executeRun({
+      config,
+      testCases: [
+        {
+          id: 'hangs',
+          version: '1.0',
+          name: 'hangs forever',
+          runner: 'slow',
+          timeout: 100,
+          steps: [{ id: 's', action: 'wait' }],
+        },
+      ] as unknown as RunOptions['testCases'],
+      runners: registry,
+    });
+    // the original timeout is what gets reported, not the capture's failure
+    expect(summary.results[0]?.steps[0]?.error?.message).toContain('timed out');
+  });
+});

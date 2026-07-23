@@ -153,6 +153,33 @@ async function withTimeout(
   });
 }
 
+const CAPTURE_BUDGET_MS = 8_000;
+
+/**
+ * Ask the runner to describe the failure, without letting that ask become a
+ * second way for the run to hang.
+ */
+async function captureFailure(
+  runner: Runner,
+  ctx: RunContext,
+): Promise<Record<string, unknown> | undefined> {
+  if (runner.captureFailure === undefined) {
+    return undefined;
+  }
+  try {
+    return await Promise.race([
+      runner.captureFailure(ctx),
+      new Promise<undefined>((resolve) =>
+        setTimeout(() => {
+          resolve(undefined);
+        }, CAPTURE_BUDGET_MS),
+      ),
+    ]);
+  } catch {
+    return undefined;
+  }
+}
+
 async function executeStep(
   runner: Runner,
   ctx: RunContext,
@@ -171,11 +198,14 @@ async function executeStep(
       }
       last = { ...result, durationMs, retries: attempt };
     } catch (err) {
+      // runStep never returned, so the runner could not record anything itself.
+      const evidence = await captureFailure(runner, ctx);
       last = {
         status: 'fail',
         durationMs: Date.now() - started,
         error: toErrorInfo(err),
         retries: attempt,
+        ...(evidence !== undefined ? { evidence } : {}),
       };
     }
     if (attempt >= maxRetries) {

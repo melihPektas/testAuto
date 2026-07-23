@@ -2,6 +2,7 @@ import { chromium, type Browser, type Page, type Response } from 'playwright';
 
 import { captureEvidence } from './evidence.js';
 
+import type { Evidence } from './evidence.js';
 import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
 
 export interface BrowserRunnerOptions {
@@ -50,6 +51,20 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
   let page: Page | undefined;
   let lastResponse: Response | null = null;
   const consoleErrors: string[] = [];
+
+  /** Capture the page for whichever failure path got here first. */
+  async function evidenceFor(ctx: RunContext): Promise<Evidence | undefined> {
+    if (page === undefined) {
+      return undefined;
+    }
+    const index = ctx.testCase.steps.findIndex((s) => s === ctx.step);
+    return captureEvidence(page, {
+      artifactsDir: ctx.workspace.artifacts,
+      testCaseId: ctx.testCase.id,
+      stepIndex: index === -1 ? 0 : index + 1,
+      ...(typeof ctx.step?.target === 'string' ? { target: ctx.step.target } : {}),
+    });
+  }
 
   async function act(ctx: RunContext): Promise<{ output?: string }> {
     if (page === undefined) {
@@ -300,22 +315,22 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
           durationMs: Date.now() - start,
           error: { message: (err as Error).message, code: 'ORCH_STEP_FAILED' },
         };
-        if (page === undefined) {
+        const evidence = await evidenceFor(ctx);
+        if (evidence === undefined) {
           return failed;
         }
-        const index = ctx.testCase.steps.findIndex((s) => s === ctx.step);
-        const evidence = await captureEvidence(page, {
-          artifactsDir: ctx.workspace.artifacts,
-          testCaseId: ctx.testCase.id,
-          stepIndex: index === -1 ? 0 : index + 1,
-          ...(typeof ctx.step?.target === 'string' ? { target: ctx.step.target } : {}),
-        });
         return {
           ...failed,
           evidence: evidence as unknown as Record<string, unknown>,
           ...(evidence.screenshot !== undefined ? { artifacts: [evidence.screenshot] } : {}),
         };
       }
+    },
+    // The engine calls this when it timed out or aborted the step: runStep never
+    // returned, so the catch above never ran.
+    captureFailure: async (ctx: RunContext): Promise<Record<string, unknown> | undefined> => {
+      const evidence = await evidenceFor(ctx);
+      return evidence as unknown as Record<string, unknown> | undefined;
     },
     dispose: async (): Promise<void> => {
       await browser?.close();
