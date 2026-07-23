@@ -1,6 +1,7 @@
 import { RunnerError, toOrchestratorError } from '../errors/index.js';
 import { noopLogger } from '../utils/logger.js';
 
+import type { Hooks } from '../hooks/hooks.js';
 import type { RunnerRegistry } from '../registry/registries.js';
 import type {
   Logger,
@@ -8,6 +9,7 @@ import type {
   Reporter,
   Runner,
   RunContext,
+  Step,
   StepResult,
   TestCase,
   TestResult,
@@ -16,6 +18,20 @@ import type {
 } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Context handed to lifecycle hooks. Fields are populated for the phases where
+ * they make sense (`testCase` from `beforeTest` on, `step` around step hooks).
+ *
+ * @public
+ */
+export interface HookContext {
+  readonly config: TestOrchestratorConfig;
+  readonly testCase?: TestCase;
+  readonly step?: Step;
+  readonly result?: TestResult;
+  readonly stepResult?: StepResult;
+}
 
 export interface RunOptions {
   readonly config: TestOrchestratorConfig;
@@ -26,6 +42,8 @@ export interface RunOptions {
   readonly workspace?: Workspace;
   readonly env?: Record<string, string>;
   readonly signal?: AbortSignal;
+  /** Lifecycle hooks (see {@link createHooks}); emitted around the run, tests and steps. */
+  readonly hooks?: Hooks<HookContext>;
 }
 
 export interface RunSummary {
@@ -172,7 +190,9 @@ async function runTestCase(
   runners: RunnerRegistry,
   reporters: readonly Reporter[],
   base: Omit<RunContext, 'testCase' | 'step'>,
+  hooks: Hooks<HookContext> | undefined,
 ): Promise<TestResult> {
+  await hooks?.emit('beforeTest', { config, testCase });
   const startedAt = new Date();
   const start = Date.now();
   const steps: StepResult[] = [];
@@ -201,11 +221,13 @@ async function runTestCase(
   for (const step of testCase.steps) {
     const stepCtx: RunContext = { ...base, testCase, step };
     await emit(reporters, { type: 'step:start', testCase, step });
+    await hooks?.emit('beforeStep', { config, testCase, step });
     const timeoutMs = step.timeout ?? testCase.timeout ?? DEFAULT_TIMEOUT_MS;
     const maxRetries = step.retry ?? testCase.retry ?? config.defaults?.retry ?? 0;
     const result = await executeStep(runner, stepCtx, timeoutMs, maxRetries);
     steps.push(result);
     await emit(reporters, { type: 'step:end', testCase, step, result });
+    await hooks?.emit('afterStep', { config, testCase, step, stepResult: result });
     if (result.status === 'fail') {
       break;
     }
@@ -233,7 +255,10 @@ async function runTestCase(
   };
   // Surface the failing step's error at the test level so reporters can show it.
   const failedStep = steps.find((s) => s.status === 'fail');
-  return failedStep?.error === undefined ? result : { ...result, error: failedStep.error };
+  const finalResult =
+    failedStep?.error === undefined ? result : { ...result, error: failedStep.error };
+  await hooks?.emit('afterTest', { config, testCase, result: finalResult });
+  return finalResult;
 }
 
 /**
@@ -262,18 +287,20 @@ export async function executeRun(options: RunOptions): Promise<RunSummary> {
 
   const startedAt = new Date();
   const start = Date.now();
+  await options.hooks?.emit('beforeRun', { config });
   await emit(reporters, { type: 'run:start', config });
 
   const results: TestResult[] = [];
   for (const testCase of testCases) {
     await emit(reporters, { type: 'test:start', testCase });
-    const result = await runTestCase(testCase, config, runners, reporters, base);
+    const result = await runTestCase(testCase, config, runners, reporters, base, options.hooks);
     results.push(result);
     await emit(reporters, { type: 'test:end', result });
   }
 
   const durationMs = Date.now() - start;
   await emit(reporters, { type: 'run:end', config, totalDurationMs: durationMs });
+  await options.hooks?.emit('afterRun', { config });
   const finishedAt = new Date();
 
   const passed = results.filter((r) => r.status === 'pass').length;
