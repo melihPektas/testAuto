@@ -11,6 +11,8 @@ import {
   createJunitReporter,
 } from '@test-orchestrator/core';
 
+import { browserRunnerFactory } from '@test-orchestrator/browser';
+
 import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
 import { assertValidTestCase } from '../internal/test-case.js';
@@ -113,7 +115,7 @@ export function registerCommands(program: Command): void {
         }
         logger.info(`discovered ${testCases.length} test case(s) in ${testsDir}`);
 
-        const runners = buildRunnerRegistry(config.runners);
+        const runners = buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
 
         const consoleReporter: Reporter = {
           kind: 'reporter',

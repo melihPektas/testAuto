@@ -12,7 +12,10 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "public"],
+  "files": [
+    "dist",
+    "public"
+  ],
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
@@ -25,7 +28,8 @@
     "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
   },
   "dependencies": {
-    "@test-orchestrator/core": "workspace:*"
+    "@test-orchestrator/core": "workspace:*",
+    "@test-orchestrator/browser": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page, type Response } from 'playwright';
 
-import type { Runner, RunContext, StepResult } from '@test-orchestrator/core';
+import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
 
 export interface BrowserRunnerOptions {
   /** Base URL prepended to relative `goto` targets. */
@@ -254,3 +254,19 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
     },
   };
 }
+
+/**
+ * Factory for wiring the browser runner into {@link buildRunnerRegistry} so a
+ * config entry of `{ "type": "browser" }` resolves to a real Playwright runner:
+ *
+ * ```ts
+ * buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
+ * ```
+ *
+ * @public
+ */
+export const browserRunnerFactory: RunnerFactory = (name, options) =>
+  createBrowserRunner(
+    name,
+    typeof options['baseUrl'] === 'string' ? { baseUrl: options['baseUrl'] } : {},
+  );

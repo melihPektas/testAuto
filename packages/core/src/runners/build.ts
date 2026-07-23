@@ -5,6 +5,7 @@ import { createN8nRunner } from './n8n-runner.js';
 import { createShellRunner } from './shell-runner.js';
 
 import type { RunnerRegistry } from '../registry/registries.js';
+import type { Runner } from '../types.js';
 
 
 export interface RunnerConfigInput {
@@ -12,6 +13,15 @@ export interface RunnerConfigInput {
   readonly type: string;
   readonly options?: Record<string, unknown>;
 }
+
+/**
+ * Factory for a runner type the core does not ship itself (e.g. the Playwright
+ * `browser` runner, which lives in `@test-orchestrator/browser` so that core
+ * stays free of heavy dependencies).
+ *
+ * @public
+ */
+export type RunnerFactory = (name: string, options: Record<string, unknown>) => Runner;
 
 /**
  * Build a runner registry from a config's `runners` list, mapping each entry to
@@ -23,9 +33,17 @@ export interface RunnerConfigInput {
  *
  * @public
  */
-export function buildRunnerRegistry(runners: readonly RunnerConfigInput[]): RunnerRegistry {
+export function buildRunnerRegistry(
+  runners: readonly RunnerConfigInput[],
+  extraFactories: Readonly<Record<string, RunnerFactory>> = {},
+): RunnerRegistry {
   const registry = createRunnerRegistry();
   for (const runner of runners) {
+    const factory = extraFactories[runner.type];
+    if (factory !== undefined) {
+      registry.register(factory(runner.name, runner.options ?? {}));
+      continue;
+    }
     const baseUrl = runner.options?.['baseUrl'];
     if (runner.type === 'n8n') {
       if (typeof baseUrl === 'string') {

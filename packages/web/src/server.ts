@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { browserRunnerFactory } from '@test-orchestrator/browser';
 import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
 
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
@@ -79,7 +80,7 @@ async function loadInputs(
   for (const file of files) {
     testCases.push(JSON.parse(await readFile(join(testsDir, file), 'utf8')));
   }
-  const runners = buildRunnerRegistry(config.runners);
+  const runners = buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
   return { config, testCases, runners };
 }
 

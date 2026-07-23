@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { createBrowserRunner } from '@test-orchestrator/browser';
+import { browserRunnerFactory, createBrowserRunner } from '@test-orchestrator/browser';
 import {
   executeRun,
   executeGenerators,
@@ -39,7 +39,7 @@ export async function runTests(
     testCases.push(JSON.parse(await readFile(join(resolvedTests, file), 'utf8')));
   }
 
-  const runners = buildRunnerRegistry(config.runners);
+  const runners = buildRunnerRegistry(config.runners, { browser: browserRunnerFactory });
 
   return executeRun({
     config: config as unknown as RunOptions['config'],
