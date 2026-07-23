@@ -467,6 +467,11 @@ Artifacts land under the workspace's `.artifacts/<test-case-id>/`:
 The raw DOM is deliberately not captured: far too large for a model, and almost
 none of it bears on the failure.
 
+For deeper debugging, a runner with `{ "trace": true }` in its config records a
+Playwright trace and keeps it **only for a failed test** — the full timeline, DOM
+snapshots and network, openable in `npx playwright show-trace`. A passing test's
+trace is discarded, since a green run should not accumulate large zips.
+
 Evidence is captured for engine-level timeouts too, which is where it matters
 most and where it is hardest to get: `runStep` never returns, so the runner's own
 error handling cannot run. The engine asks the runner to describe the failure

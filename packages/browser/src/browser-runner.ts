@@ -29,6 +29,12 @@ export interface BrowserRunnerOptions {
   readonly baseUrl?: string;
   /** Launch a headed browser (default: headless). */
   readonly headed?: boolean;
+  /**
+   * Record a Playwright trace and keep it only for a test that failed. A trace
+   * is a full replay — timeline, DOM snapshots, network — but it is large, so a
+   * passing test's trace is discarded rather than written.
+   */
+  readonly trace?: boolean;
 }
 
 /** Stringify a step value safely (never "[object Object]"). */
@@ -71,6 +77,8 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
   let page: Page | undefined;
   let lastResponse: Response | null = null;
   let network: NetworkRecorder | undefined;
+  // Where to keep this test's trace if it fails; undefined means keep nothing.
+  let traceTarget: string | undefined;
   const consoleErrors: string[] = [];
 
   /** Capture the page for whichever failure path got here first. */
@@ -93,10 +101,19 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       .slice(0, 5)
       .map((c) => `${c.method} ${endpointOf(c.url)} → ${c.failure ?? String(c.status)}`);
 
+    // Mark this test's trace to be kept, and tell the report where it will be.
+    let trace: string | undefined;
+    if (options.trace === true) {
+      const rel = join(slug(ctx.testCase.id), `trace-${String(index === -1 ? 0 : index + 1)}.zip`);
+      traceTarget = join(ctx.workspace.artifacts, rel);
+      trace = rel;
+    }
+
     return {
       ...evidence,
       apiCalls: net.apiCalls,
       ...(failedApiCalls.length > 0 ? { failedApiCalls } : {}),
+      ...(trace !== undefined ? { trace } : {}),
     };
   }
 
@@ -502,6 +519,10 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       // actually carries cookies, storage and cache.
       browser ??= await chromium.launch({ headless: options.headed !== true });
       context = await browser.newContext();
+      traceTarget = undefined;
+      if (options.trace === true) {
+        await context.tracing.start({ screenshots: true, snapshots: true });
+      }
       page = await context.newPage();
       lastResponse = null;
       consoleErrors.length = 0;
@@ -544,6 +565,15 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
     captureFailure: (ctx: RunContext): Promise<Record<string, unknown> | undefined> =>
       evidenceFor(ctx),
     dispose: async (): Promise<void> => {
+      if (options.trace === true && context !== undefined) {
+        try {
+          // Keep the trace only if a failure asked us to; otherwise stop and
+          // discard, so a green run does not accumulate large zips.
+          await context.tracing.stop(traceTarget === undefined ? {} : { path: traceTarget });
+        } catch {
+          // a trace is a debugging aid; never let it fail the run
+        }
+      }
       await context?.close();
       context = undefined;
       page = undefined;
@@ -566,7 +596,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
  * @public
  */
 export const browserRunnerFactory: RunnerFactory = (name, options) =>
-  createBrowserRunner(
-    name,
-    typeof options['baseUrl'] === 'string' ? { baseUrl: options['baseUrl'] } : {},
-  );
+  createBrowserRunner(name, {
+    ...(typeof options['baseUrl'] === 'string' ? { baseUrl: options['baseUrl'] } : {}),
+    ...(options['trace'] === true ? { trace: true } : {}),
+  });
