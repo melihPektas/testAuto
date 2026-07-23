@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
-import { assertValidConfig } from './config-validator.js';
+import { formatAjvErrors, validateConfig } from '@test-orchestrator/schema';
+
 import { OrchestratorError } from './errors.js';
 
-import type { TestOrchestratorConfig } from './config-types.js';
+import type { TestOrchestratorConfig } from '@test-orchestrator/schema';
 
 export function resolveConfigPath(explicitPath: string | undefined, cwd?: string): string {
   if (explicitPath !== undefined) {
@@ -32,8 +33,14 @@ export async function loadConfig(path: string): Promise<TestOrchestratorConfig> 
       { code: 'ORCH_CONFIG_LOAD' },
     );
   }
-  assertValidConfig(parsed);
-  return parsed;
+  // Single source of truth: the JSON Schema + AJV validators in @test-orchestrator/schema.
+  const result = validateConfig(parsed);
+  if (!result.ok) {
+    throw new OrchestratorError(`Invalid config: ${formatAjvErrors(result.errors)}`, {
+      code: 'ORCH_CONFIG_INVALID',
+    });
+  }
+  return result.data;
 }
 
 export async function resolveConfig(

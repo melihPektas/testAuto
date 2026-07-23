@@ -1,6 +1,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
 import {
   executeRun,
   executeGenerators,
@@ -14,12 +15,10 @@ import {
   loadPlugins,
   createOchestratorRegistries,
 } from '@test-orchestrator/core';
-
-import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
+import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
 import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
-import { assertValidTestCase } from '../internal/test-case.js';
 
 import type { GenerateRunOptions, Reporter, RunOptions, Workspace } from '@test-orchestrator/core';
 import type { Command } from 'commander';
@@ -124,8 +123,11 @@ export function registerCommands(program: Command): void {
         const testCases: unknown[] = [];
         for (const file of files) {
           const parsed: unknown = JSON.parse(await readFile(join(testsDir, file), 'utf8'));
-          assertValidTestCase(parsed);
-          testCases.push(parsed);
+          const validated = validateTestCase(parsed);
+          if (!validated.ok) {
+            throw new Error(`Invalid test case ${file}: ${formatAjvErrors(validated.errors)}`);
+          }
+          testCases.push(validated.data);
         }
         logger.info(`discovered ${testCases.length} test case(s) in ${testsDir}`);
 
