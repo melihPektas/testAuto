@@ -7,3 +7,10 @@ coverage/
 *.log
 .vite/
 vitest.config.*.timestamp*
+
+# Generated test-case output from `author` / `matrix` runs
+examples/**/authored/
+examples/**/matrix/
+examples/**/sample/
+examples/autoex/
+*.csv
