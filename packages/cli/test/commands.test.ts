@@ -22,6 +22,7 @@ describe('CLI Commands Registration', () => {
     // Asserting the set rather than a count, so adding a command fails here
     // with the name that changed instead of an unhelpful number.
     expect(program.commands.map((c) => c.name()).sort()).toEqual([
+      'api',
       'author',
       'export',
       'generate',

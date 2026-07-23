@@ -5,6 +5,13 @@
     {
       "name": "ui",
       "type": "browser"
+    },
+    {
+      "name": "api",
+      "type": "http",
+      "options": {
+        "baseUrl": "http://localhost:4700"
+      }
     }
   ],
   "llm": {

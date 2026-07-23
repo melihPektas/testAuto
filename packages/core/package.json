@@ -28,7 +28,9 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
@@ -40,7 +42,8 @@
     "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
   },
   "dependencies": {
-    "@test-orchestrator/schema": "workspace:*"
+    "@test-orchestrator/schema": "workspace:*",
+    "yaml": "^2.4.0"
   },
   "devDependencies": {
     "vitest": "^1.6.0",

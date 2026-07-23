@@ -137,6 +137,9 @@ importers:
       '@test-orchestrator/schema':
         specifier: workspace:*
         version: link:../schema
+      yaml:
+        specifier: ^2.4.0
+        version: 2.9.0
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^1.6.0

@@ -47,6 +47,10 @@ DOM dispose.
   (search terms, categories, brands) and the cross-product is expanded locally.
   Asking a model for 500 cases yields repetition; asking for the axes yields 500
   genuinely distinct cases from one call.
+- **API tests from a spec** — point it at an OpenAPI/Swagger document (URL or
+  file, JSON or YAML) and get a case per operation: the documented status, the
+  response schema, a negative case that drops a required parameter, and an
+  unauthenticated call for anything that declares security.
 - **Ingest** — scan an existing project, detect its framework
   (vitest/jest/playwright/mocha), and adopt its test files.
 - **Generators** — produce test-case files from templates or from URLs.
@@ -55,8 +59,9 @@ DOM dispose.
 
 - **Runner engine** — per-step **timeout**, **retry** (a step that passes only on
   retry is marked `flaky`), fail-fast, and lifecycle **events** and **hooks**.
-- **Runners** — `shell` (exit 0 passes), `http` (`request` / `expectStatus` /
-  `expectBody`), `n8n` (POST to a workflow webhook), and `browser`: a real
+- **Runners** — `shell` (exit 0 passes), `http` (`request`, `setHeader`,
+  `expectStatus`, `expectStatusIn`, `expectBody`, `expectSchema`), `n8n` (POST
+  to a workflow webhook), and `browser`: a real
   Chromium with 19 actions covering navigation, form filling, assertions on
   title, text, selectors, URL, element counts, and a full `audit`.
 - **Comprehensive UI audit** — one step checks title, rendered body, console
@@ -79,8 +84,8 @@ DOM dispose.
 
 **Interfaces**
 
-- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `triage`, `repair`,
-  `export`, `report`, `plugin`.
+- **CLI** — `init`, `generate`, `author`, `matrix`, `api`, `run`, `triage`,
+  `repair`, `export`, `report`, `plugin`.
 - **MCP server** — `list_tests`, `run_tests`, `generate_tests`, `test_url`,
   `explore_site`, `author_tests`, `triage_failures`, `ingest_project`.
 - **Web dashboard** — point it at a URL and it generates tests, runs them in
@@ -211,6 +216,44 @@ reason.
 
 Measured on a real e-commerce listing page: **500 distinct cases from one model
 call in 2m14s**.
+
+## 🔗 Backend tests from an OpenAPI spec
+
+```bash
+node packages/cli/bin/test-orchestrator.js api https://api.example.com/v3/api-docs -d backend
+node packages/cli/bin/test-orchestrator.js run -t backend/api -j 4
+```
+
+A spec already states the paths, the methods, the required parameters, the
+success codes and the response schemas. Asking a model to restate them would
+only add a way to get them wrong, so this half is entirely rule-based. Per
+operation it writes:
+
+- the documented happy path, asserting the declared status **and** validating the
+  response against its own schema
+- a negative case that drops one required parameter and expects a 4xx — a
+  requirement the spec claims and the server does not enforce is a real defect
+- an unauthenticated call expecting 401/403, for operations that declare security
+
+**Write methods are excluded unless you ask for them.** These tests issue real
+requests; a generator that quietly fires `DELETE` at whatever host it was
+pointed at is worse than one that generates nothing. Pass `--include-writes`
+when you mean it.
+
+Tokens are named, not stored: `--auth-env SHOP_TOKEN` emits a
+`Bearer ${SHOP_TOKEN}` header that the runner expands from the environment at
+request time, so the committed test file holds no credential — and the step's
+log line reports the header name and never its value.
+
+`examples/demoshop` serves a small JSON API and ships the spec for it, so the
+whole path is runnable locally:
+
+```bash
+node examples/demoshop/server.mjs
+cd examples/demoshop
+node ../../packages/cli/bin/test-orchestrator.js api openapi.json -d .
+node ../../packages/cli/bin/test-orchestrator.js run -t api
+```
 
 ## ▶️ Running
 

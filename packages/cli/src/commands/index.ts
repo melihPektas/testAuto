@@ -27,6 +27,8 @@ import {
   buildGeneratorRegistry,
   loadPlugins,
   createOchestratorRegistries,
+  generateApiTests,
+  loadSpec,
   testCasesToCsv,
 } from '@test-orchestrator/core';
 import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
@@ -253,6 +255,49 @@ export function registerCommands(program: Command): void {
         }
       } catch (err) {
         logger.error(`failed to build matrix: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('api')
+    .description('Generate API test cases from an OpenAPI/Swagger spec (url or file)')
+    .argument('<spec>', 'url or path of the OpenAPI document')
+    .option('-d, --dir <dir>', 'output directory (cases land in <dir>/api/)', '.')
+    .option('-r, --runner <name>', 'runner name the cases should target', 'api')
+    .option('--auth-env <var>', 'environment variable holding a bearer token')
+    .option('--include-writes', 'also generate POST/PUT/PATCH/DELETE cases (these change data)')
+    .option('--happy-path-only', 'skip the negative cases')
+    .action(async (spec: string, opts: Record<string, unknown>) => {
+      try {
+        const api = await loadSpec(spec);
+        logger.info(`${api.title} ${api.version} — ${String(api.operations.length)} operation(s)`);
+        if (api.serverUrl !== undefined) {
+          logger.info(`server: ${api.serverUrl} (set this as the runner's baseUrl)`);
+        }
+
+        const authEnv = typeof opts['authEnv'] === 'string' ? opts['authEnv'] : undefined;
+        const { cases, skipped } = generateApiTests(api, {
+          runner: typeof opts['runner'] === 'string' ? opts['runner'] : 'api',
+          includeWrites: opts['includeWrites'] === true,
+          happyPathOnly: opts['happyPathOnly'] === true,
+          ...(authEnv !== undefined ? { authEnv } : {}),
+        });
+
+        for (const skip of skipped) {
+          logger.warn(`  skipped ${skip.operation}: ${skip.reason}`);
+        }
+        const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.';
+        const written = await writeAuthored(dir, cases);
+        for (const testCase of cases) {
+          logger.info(`  ${testCase.path}  ${testCase.name}`);
+        }
+        logger.info(`wrote ${String(written.length)} test case(s) to ${dir}/api/`);
+        if (written.length === 0) {
+          process.exitCode = 1;
+        }
+      } catch (err) {
+        logger.error(`failed to read the spec: ${(err as Error).message}`);
         process.exitCode = 1;
       }
     });

@@ -42,12 +42,52 @@ const welcome = (email) =>
     `<h1>Account</h1><p class="welcome-banner">Welcome, ${email}!</p><a href="/">Home</a>`,
   );
 
+// ---- a small JSON API, described by openapi.json next to this file ----
+const PRODUCTS = [
+  { id: '1', name: 'Blue mug', price: 12.5, category: 'kitchen' },
+  { id: '2', name: 'Notebook', price: 4, category: 'office' },
+  { id: '3', name: 'Desk lamp', price: 39.9, category: 'office' },
+];
+
+/** Returns true when it handled the request. */
+function api(url, send) {
+  const json = (status, body) => {
+    send(status, JSON.stringify(body), 'application/json');
+    return true;
+  };
+
+  if (url.pathname === '/api/health') {
+    return json(200, { status: 'up' });
+  }
+  if (url.pathname === '/api/products') {
+    const category = url.searchParams.get('category');
+    // The spec says category is required, and this endpoint enforces it.
+    if (category === null) {
+      return json(400, { error: 'category is required' });
+    }
+    return json(200, PRODUCTS.filter((p) => p.category === category));
+  }
+  const match = /^\/api\/products\/([^/]+)$/.exec(url.pathname);
+  if (match) {
+    const found = PRODUCTS.find((p) => p.id === match[1]);
+    return found ? json(200, found) : json(404, { error: 'no such product' });
+  }
+  return false;
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
-  const send = (status, body) => {
-    res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
+  const send = (status, body, type = 'text/html; charset=utf-8') => {
+    res.writeHead(status, { 'content-type': type });
     res.end(body);
   };
+
+  if (url.pathname.startsWith('/api/') && req.method === 'GET') {
+    if (api(url, send)) {
+      return;
+    }
+    return send(404, JSON.stringify({ error: 'not found' }), 'application/json');
+  }
 
   if (req.method === 'POST' && url.pathname === '/login') {
     let raw = '';

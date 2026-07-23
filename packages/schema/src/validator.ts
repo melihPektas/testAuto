@@ -13,6 +13,15 @@ export type SchemaValidationResult<T> =
   | { ok: false; errors: ErrorObject<string, Record<string, unknown>, unknown>[] };
 
 let ajvInstance: Ajv2020 | undefined;
+let lenientAjv: Ajv2020 | undefined;
+
+function getLenientAjv(): Ajv2020 {
+  if (lenientAjv === undefined) {
+    lenientAjv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
+    addFormats(lenientAjv);
+  }
+  return lenientAjv;
+}
 
 function getAjv(): Ajv2020 {
   if (ajvInstance === undefined) {
@@ -62,6 +71,39 @@ export function formatAjvErrors(errors: ErrorObject[]): string {
     .join('\n');
 }
 
+/**
+ * Validate data against a schema supplied at runtime — an OpenAPI response
+ * schema, say, rather than one of this package's own documents.
+ *
+ * A separate, lenient Ajv instance is used on purpose: our documents are
+ * validated strictly because we wrote them, but a third party's spec routinely
+ * carries vendor extensions and keywords Ajv does not know, and refusing to
+ * check a response because its schema mentions `nullable` would help nobody.
+ *
+ * @public
+ */
+export function validateAgainst(schema: unknown, data: unknown): SchemaValidationResult<unknown> {
+  let validate;
+  try {
+    validate = getLenientAjv().compile(schema as object);
+  } catch (err) {
+    return {
+      ok: false,
+      errors: [
+        {
+          instancePath: '',
+          schemaPath: '',
+          keyword: 'schema',
+          params: {},
+          message: `unusable schema: ${(err as Error).message}`,
+        },
+      ],
+    };
+  }
+  return validate(data) ? { ok: true, data } : { ok: false, errors: validate.errors ?? [] };
+}
+
 export function resetAjvCache(): void {
   ajvInstance = undefined;
+  lenientAjv = undefined;
 }
