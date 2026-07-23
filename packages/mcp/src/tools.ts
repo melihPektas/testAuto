@@ -1,7 +1,12 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { authorSite, writeAuthored } from '@test-orchestrator/agent';
+import {
+  authorSite,
+  failuresFromReport,
+  triageFailures,
+  writeAuthored,
+} from '@test-orchestrator/agent';
 import {
   browserRunnerFactory,
   createBrowserRunner,
@@ -182,6 +187,30 @@ export async function authorTestsTool(
     written,
     cases: site.cases.map((c) => ({ file: c.path, name: c.name, steps: c.steps })),
   };
+}
+
+export async function triageTool(
+  configPath: string,
+  testsDir: string,
+): Promise<{ summary: Awaited<ReturnType<typeof triageFailures>>; failures: number }> {
+  const report = await runTests(configPath, testsDir);
+  const resolvedTests = resolve(process.cwd(), testsDir);
+  const testCases: { id: string; steps: unknown[] }[] = [];
+  for (const file of (await readdir(resolvedTests)).filter((f) => f.endsWith('.test-case.json'))) {
+    const parsed = JSON.parse(await readFile(join(resolvedTests, file), 'utf8')) as {
+      id?: unknown;
+      steps?: unknown;
+    };
+    if (typeof parsed.id === 'string' && Array.isArray(parsed.steps)) {
+      testCases.push({ id: parsed.id, steps: parsed.steps });
+    }
+  }
+
+  const failures = failuresFromReport(
+    report as unknown as Parameters<typeof failuresFromReport>[0],
+    testCases,
+  );
+  return { summary: await triageFailures(failures), failures: failures.length };
 }
 
 export async function generateTests(

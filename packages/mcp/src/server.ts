@@ -10,6 +10,7 @@ import {
   listTests,
   runTests,
   testUrl,
+  triageTool,
 } from './tools.js';
 
 function textResult(value: unknown): { content: { type: 'text'; text: string }[] } {
@@ -80,6 +81,16 @@ export function createOrchestratorServer(): McpServer {
     },
     async ({ url, maxPages, count, dir, model, baseUrl }) =>
       textResult(await authorTestsTool(url, maxPages, count, dir, model, baseUrl)),
+  );
+
+  server.tool(
+    'triage_failures',
+    'Run a directory of test cases and CLASSIFY every failure: product-bug (the app is broken), test-bug (the test is wrong), flaky, environment (blocked/unreachable) or test-data (invented credentials or fixtures). Unambiguous failures — 4xx/5xx, DNS, a step that only passed on retry — are decided by rule without calling a model; the rest are judged with the whole run as context, since a failure next to passing tests of the same feature reads very differently.',
+    {
+      configPath: z.string().default('test-orchestrator.config.json'),
+      testsDir: z.string().default('.'),
+    },
+    async ({ configPath, testsDir }) => textResult(await triageTool(configPath, testsDir)),
   );
 
   server.tool(

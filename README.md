@@ -41,9 +41,12 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
   (search terms, categories, brands) and the cross-product is expanded locally.
   One model call yields hundreds of genuinely distinct cases; asking a model for
   hundreds of cases directly just yields repetition.
+- **Triage** — when a test fails, classify what the failure _means_:
+  `product-bug`, `test-bug`, `flaky`, `environment` or `test-data`. Unambiguous
+  failures are decided by rule with no model call at all.
 - **CSV export** — hand the generated inventory to a QA team or a test-management
   tool (`--per-step` for step-level rows).
-- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `export`, `report`, `plugin`.
+- **CLI** — `init`, `generate`, `author`, `matrix`, `run`, `triage`, `export`, `report`, `plugin`.
 - **Web dashboard** — browse test cases, run them, and watch results stream live
   over Server-Sent Events.
 
@@ -135,6 +138,32 @@ dropped with a reason.
 
 Measured on a real listing page: **500 distinct cases from one model call in
 2m14s.**
+
+### Triage
+
+A failing suite is a pile of error strings until someone decides what each one
+means. `triage` does that pass:
+
+```bash
+node packages/cli/bin/test-orchestrator.js run -t authored --reporter json --out results.json
+node packages/cli/bin/test-orchestrator.js triage -i results.json -t authored
+```
+
+Rules go first, and they are not a shortcut — a 403, a 5xx, a DNS failure or a
+step that only passed on retry has one correct reading, and a regex gives it in
+microseconds. Measured: **8 blocked cases triaged in 0.22s with zero model
+calls**; the same eight through a local model would have taken about four
+minutes.
+
+What needs judgement goes to the model _with the rest of the run attached_. That
+detail decides the verdict: asked about a failed login in isolation the model
+called it a product bug, and shown that "log in with invalid credentials" had
+passed in the same run — proving the login flow works — it correctly called the
+same failure `test-data`, naming the invented credentials.
+
+A model that is slow, unreachable or off-contract yields a low-confidence result
+rather than an exception. Triage must never break the run that produced the
+failure.
 
 ### Try it locally
 

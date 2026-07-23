@@ -104,6 +104,10 @@ export interface GeneratedFile {
 }
 
 export interface StepResult {
+  /** The step this result belongs to — a report is unreadable without it. */
+  readonly stepId?: string;
+  /** The action the step attempted, carried through for diagnosis. */
+  readonly action?: string;
   readonly status: 'pass' | 'fail' | 'flaky';
   readonly durationMs: number;
   readonly output?: string;

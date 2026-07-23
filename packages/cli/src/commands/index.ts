@@ -1,7 +1,14 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import { authorSite, matrixSite, resolveLlm, writeAuthored } from '@test-orchestrator/agent';
+import {
+  authorSite,
+  failuresFromReport,
+  matrixSite,
+  resolveLlm,
+  triageFailures,
+  writeAuthored,
+} from '@test-orchestrator/agent';
 import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
 import {
   executeRun,
@@ -211,6 +218,91 @@ export function registerCommands(program: Command): void {
         }
       } catch (err) {
         logger.error(`failed to build matrix: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('triage')
+    .description(
+      'Classify the failures in a JSON report: product bug, test bug, flaky, environment or test data',
+    )
+    .option('-i, --input <path>', 'path to the JSON report', 'results.json')
+    .option('-t, --tests <dir>', 'directory holding the test cases the report came from')
+    .option('-o, --out <path>', 'write the triage as JSON to this path')
+    .option('-m, --model <model>', 'model id (default: $TEST_ORCHESTRATOR_LLM_MODEL)')
+    .option(
+      '-u, --llm-url <url>',
+      'OpenAI-compatible base URL (default: $TEST_ORCHESTRATOR_LLM_URL)',
+    )
+    .action(async (opts: Record<string, unknown>) => {
+      try {
+        const input = resolve(
+          process.cwd(),
+          typeof opts['input'] === 'string' ? opts['input'] : 'results.json',
+        );
+        const report = JSON.parse(await readFile(input, 'utf8')) as Parameters<
+          typeof failuresFromReport
+        >[0];
+
+        // The report records what happened, not what was asked for; loading the
+        // test cases recovers the failing step's selector and value.
+        const testCases: { id: string; steps: unknown[] }[] = [];
+        if (typeof opts['tests'] === 'string') {
+          const testsDir = resolve(process.cwd(), opts['tests']);
+          for (const file of (await readdir(testsDir)).filter((f) =>
+            f.endsWith('.test-case.json'),
+          )) {
+            const parsed = JSON.parse(await readFile(join(testsDir, file), 'utf8')) as {
+              id?: unknown;
+              steps?: unknown;
+            };
+            if (typeof parsed.id === 'string' && Array.isArray(parsed.steps)) {
+              testCases.push({ id: parsed.id, steps: parsed.steps });
+            }
+          }
+        }
+
+        const failures = failuresFromReport(report, testCases);
+        if (failures.length === 0) {
+          logger.info('no failures to triage');
+          return;
+        }
+        logger.info(`triaging ${String(failures.length)} failure(s)`);
+
+        const model = typeof opts['model'] === 'string' ? opts['model'] : undefined;
+        const llmUrl = typeof opts['llmUrl'] === 'string' ? opts['llmUrl'] : undefined;
+        const summary = await triageFailures(failures, {
+          ...(model !== undefined ? { model } : {}),
+          ...(llmUrl !== undefined ? { baseUrl: llmUrl } : {}),
+          onTriage: (triage) => {
+            const line = `  [${triage.verdict}] ${triage.testCaseId} (${triage.confidence}, by ${triage.source}) — ${triage.reason}`;
+            if (triage.verdict === 'product-bug') {
+              logger.error(line);
+            } else if (triage.confidence === 'low') {
+              logger.warn(line);
+            } else {
+              logger.info(line);
+            }
+          },
+        });
+
+        for (const [verdict, count] of Object.entries(summary.byVerdict).sort(
+          (a, b) => b[1] - a[1],
+        )) {
+          logger.info(`${verdict}: ${String(count)}`);
+        }
+        logger.info(
+          `${String(summary.byRule)} decided by rule, ${String(summary.byModel)} by the model`,
+        );
+
+        if (typeof opts['out'] === 'string') {
+          const out = resolve(process.cwd(), opts['out']);
+          await writeFile(out, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+          logger.info(`wrote ${out}`);
+        }
+      } catch (err) {
+        logger.error(`failed to triage: ${(err as Error).message}`);
         process.exitCode = 1;
       }
     });

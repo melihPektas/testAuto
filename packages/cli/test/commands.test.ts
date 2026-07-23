@@ -30,6 +30,7 @@ describe('CLI Commands Registration', () => {
       'plugin',
       'report',
       'run',
+      'triage',
     ]);
   });
 });

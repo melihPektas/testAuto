@@ -88,12 +88,15 @@ function resolveRunner(
   config: TestOrchestratorConfig,
   runners: RunnerRegistry,
 ): Runner {
-  const name =
-    testCase.runner ?? config.defaults?.runner ?? config.runners[0]?.name;
+  const name = testCase.runner ?? config.defaults?.runner ?? config.runners[0]?.name;
   if (name === undefined) {
-    throw new RunnerError('ORCH_RUNNER_NOT_FOUND', 'No runner could be resolved for the test case', {
-      context: { testCase: testCase.id },
-    });
+    throw new RunnerError(
+      'ORCH_RUNNER_NOT_FOUND',
+      'No runner could be resolved for the test case',
+      {
+        context: { testCase: testCase.id },
+      },
+    );
   }
   const runner = runners.list().find((r) => r.name === name);
   if (runner === undefined) {
@@ -148,11 +151,7 @@ async function executeStep(
   for (;;) {
     const started = Date.now();
     try {
-      const result = await withTimeout(
-        Promise.resolve(runner.runStep(ctx)),
-        timeoutMs,
-        ctx.signal,
-      );
+      const result = await withTimeout(Promise.resolve(runner.runStep(ctx)), timeoutMs, ctx.signal);
       const durationMs = result.durationMs || Date.now() - started;
       if (result.status === 'pass') {
         return { ...result, durationMs, retries: attempt };
@@ -173,10 +172,7 @@ async function executeStep(
   }
 }
 
-async function emit(
-  reporters: readonly Reporter[],
-  event: OrchestratorEvent,
-): Promise<void> {
+async function emit(reporters: readonly Reporter[], event: OrchestratorEvent): Promise<void> {
   for (const reporter of reporters) {
     if (reporter.onEvent !== undefined) {
       await reporter.onEvent(event);
@@ -224,7 +220,14 @@ async function runTestCase(
     await hooks?.emit('beforeStep', { config, testCase, step });
     const timeoutMs = step.timeout ?? testCase.timeout ?? DEFAULT_TIMEOUT_MS;
     const maxRetries = step.retry ?? testCase.retry ?? config.defaults?.retry ?? 0;
-    const result = await executeStep(runner, stepCtx, timeoutMs, maxRetries);
+    const executed = await executeStep(runner, stepCtx, timeoutMs, maxRetries);
+    // Stamp the result with what it was: a report that only says "step 4 failed"
+    // cannot be diagnosed by a human or by the triager.
+    const result: StepResult = {
+      ...executed,
+      ...(step.id !== undefined ? { stepId: step.id } : {}),
+      ...(step.action !== undefined ? { action: step.action } : {}),
+    };
     steps.push(result);
     await emit(reporters, { type: 'step:end', testCase, step, result });
     await hooks?.emit('afterStep', { config, testCase, step, stepResult: result });
