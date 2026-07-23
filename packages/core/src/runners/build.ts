@@ -1,9 +1,11 @@
 import { createRunnerRegistry } from '../registry/registries.js';
+
+import { createHttpRunner } from './http-runner.js';
+import { createN8nRunner } from './n8n-runner.js';
+import { createShellRunner } from './shell-runner.js';
+
 import type { RunnerRegistry } from '../registry/registries.js';
 
-import { createShellRunner } from './shell-runner.js';
-import { createN8nRunner } from './n8n-runner.js';
-import { createHttpRunner } from './http-runner.js';
 
 export interface RunnerConfigInput {
   readonly name: string;

@@ -9,6 +9,17 @@ export interface BrowserRunnerOptions {
   readonly headed?: boolean;
 }
 
+/** Stringify a step value safely (never "[object Object]"). */
+function text(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return value === undefined || value === null ? '' : JSON.stringify(value);
+}
+
 function resolveUrl(value: string, baseUrl: string | undefined): string {
   if (/^https?:\/\//.test(value)) {
     return value;
@@ -49,7 +60,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
 
     switch (action) {
       case 'goto': {
-        const url = resolveUrl(String(value ?? target ?? ''), options.baseUrl);
+        const url = resolveUrl(text(value ?? target), options.baseUrl);
         lastResponse = await page.goto(url, { waitUntil: 'domcontentloaded' });
         return { output: `navigated to ${url} (${lastResponse?.status() ?? 'no response'})` };
       }
@@ -64,8 +75,8 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       case 'expectTitle': {
         const title = await page.title();
         if (value !== undefined && value !== '') {
-          if (!title.includes(String(value))) {
-            throw new Error(`title "${title}" does not contain "${String(value)}"`);
+          if (!title.includes(text(value))) {
+            throw new Error(`title "${title}" does not contain "${text(value)}"`);
           }
         } else if (title.length === 0) {
           throw new Error('page has an empty title');
@@ -81,7 +92,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         return { output: `selector "${selector}" found` };
       }
       case 'expectText': {
-        const needle = String(value ?? '');
+        const needle = text(value);
         const body = (await page.textContent('body')) ?? '';
         if (!body.includes(needle)) {
           throw new Error(`page does not contain text "${needle}"`);

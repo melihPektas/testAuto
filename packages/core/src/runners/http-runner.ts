@@ -5,6 +5,17 @@ export interface HttpRunnerOptions {
   readonly baseUrl?: string;
 }
 
+/** Stringify a step value safely (never "[object Object]"). */
+function text(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return value === undefined || value === null ? '' : JSON.stringify(value);
+}
+
 function resolveUrl(rawUrl: string, baseUrl: string | undefined): string {
   if (/^https?:\/\//.test(rawUrl)) {
     return rawUrl;
@@ -36,7 +47,7 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
       try {
         switch (action) {
           case 'request': {
-            const spec = String(step?.target ?? `GET ${String(step?.value ?? '')}`);
+            const spec = typeof step?.target === 'string' ? step.target : `GET ${text(step?.value)}`;
             const spaceIdx = spec.indexOf(' ');
             const method = (spaceIdx === -1 ? 'GET' : spec.slice(0, spaceIdx)).toUpperCase();
             const rawUrl = spaceIdx === -1 ? spec : spec.slice(spaceIdx + 1);
@@ -60,7 +71,7 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
             return { status: 'pass', durationMs: Date.now() - start, output: `status ${String(lastStatus)}` };
           }
           case 'expectBody': {
-            const needle = String(step?.value ?? '');
+            const needle = text(step?.value);
             if (!lastBody.includes(needle)) {
               throw new Error(`response body does not contain "${needle}"`);
             }

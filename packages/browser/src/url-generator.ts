@@ -28,11 +28,12 @@ export function createUrlGenerator(): Generator {
     kind: 'generator',
     name: 'url',
     type: 'url',
-    generate: async (ctx: GenerateContext): Promise<GeneratedSuite> => {
+    generate: (ctx: GenerateContext): Promise<GeneratedSuite> => {
       const urlsOption = ctx.options?.['urls'];
+      const rawUrl = ctx.options?.['url'];
       const urls = Array.isArray(urlsOption)
-        ? urlsOption.map((u) => String(u))
-        : [String(ctx.options?.['url'] ?? 'https://example.com')];
+        ? urlsOption.map((u) => (typeof u === 'string' ? u : ''))
+        : [typeof rawUrl === 'string' ? rawUrl : 'https://example.com'];
       const outputDir =
         typeof ctx.options?.['outputDir'] === 'string' ? ctx.options['outputDir'] : '.';
 
@@ -56,7 +57,7 @@ export function createUrlGenerator(): Generator {
         };
       });
 
-      return { files };
+      return Promise.resolve({ files });
     },
   };
 }

@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
+import { createBrowserRunner } from '@test-orchestrator/browser';
 import {
   executeRun,
   executeGenerators,
@@ -10,8 +11,8 @@ import {
   createTemplateGenerator,
   ingestProject,
 } from '@test-orchestrator/core';
+
 import type { GenerateRunOptions, RunOptions, RunSummary, Workspace } from '@test-orchestrator/core';
-import { createBrowserRunner } from '@test-orchestrator/browser';
 
 interface WebConfig {
   name: string;
