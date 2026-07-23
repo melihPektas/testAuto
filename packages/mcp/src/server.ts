@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 import {
+  authorTestsTool,
   exploreSiteTool,
   generateTests,
   ingestProjectTool,
@@ -58,8 +59,27 @@ export function createOrchestratorServer(): McpServer {
   server.tool(
     'explore_site',
     'Explore a website with a real browser and AUTHOR test cases from what is found: crawls same-origin pages, records links, headings and every form with its fields, then writes an orchestrator test case per page (UI audit), per form (fill-and-submit flow) and a navigation check into <dir>/explored/. This is how the agent writes tests for an app it has never seen.',
-    { url: z.string().url(), maxPages: z.number().int().min(1).max(20).default(5), dir: z.string().default('.') },
+    {
+      url: z.string().url(),
+      maxPages: z.number().int().min(1).max(20).default(5),
+      dir: z.string().default('.'),
+    },
     async ({ url, maxPages, dir }) => textResult(await exploreSiteTool(url, maxPages, dir)),
+  );
+
+  server.tool(
+    'author_tests',
+    'Explore a site and have an LLM AUTHOR realistic test scenarios for it — including negative cases and multi-step journeys that rule-based generation cannot invent. Every scenario the model returns is validated before it is kept (JSON Schema, an allowlist of runner actions, and a same-origin check on the entry step); anything that fails is reported in `rejected` instead of being written. Accepted cases are written to <dir>/authored/. Needs an OpenAI-compatible endpoint (e.g. a local Ollama).',
+    {
+      url: z.string().url(),
+      maxPages: z.number().int().min(1).max(10).default(3),
+      count: z.number().int().min(1).max(8).default(3),
+      dir: z.string().default('.'),
+      model: z.string().optional(),
+      baseUrl: z.string().optional(),
+    },
+    async ({ url, maxPages, count, dir, model, baseUrl }) =>
+      textResult(await authorTestsTool(url, maxPages, count, dir, model, baseUrl)),
   );
 
   server.tool(

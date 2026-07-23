@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
+import { authorTestsForPage, resolveLlm } from '@test-orchestrator/agent';
 import {
   browserRunnerFactory,
   createBrowserRunner,
@@ -17,7 +18,12 @@ import {
   ingestProject,
 } from '@test-orchestrator/core';
 
-import type { GenerateRunOptions, RunOptions, RunSummary, Workspace } from '@test-orchestrator/core';
+import type {
+  GenerateRunOptions,
+  RunOptions,
+  RunSummary,
+  Workspace,
+} from '@test-orchestrator/core';
 
 interface WebConfig {
   name: string;
@@ -30,10 +36,7 @@ export async function listTests(dir: string): Promise<string[]> {
   return entries.filter((f) => f.endsWith('.test-case.json')).sort();
 }
 
-export async function runTests(
-  configPath: string,
-  testsDir: string,
-): Promise<RunSummary> {
+export async function runTests(configPath: string, testsDir: string): Promise<RunSummary> {
   const resolvedConfig = resolve(process.cwd(), configPath);
   const resolvedTests = resolve(process.cwd(), testsDir);
   const config = JSON.parse(await readFile(resolvedConfig, 'utf8')) as WebConfig;
@@ -112,13 +115,13 @@ export async function exploreSiteTool(
   maxPages: number,
   dir: string,
 ): Promise<{
-    origin: string;
-    pagesVisited: number;
-    pages: { url: string; title: string; links: number; forms: number }[];
-    formsFound: number;
-    generated: number;
-    written: string[];
-  }> {
+  origin: string;
+  pagesVisited: number;
+  pages: { url: string; title: string; links: number; forms: number }[];
+  formsFound: number;
+  generated: number;
+  written: string[];
+}> {
   const map = await exploreSite(url, { maxPages });
   const cases = generateTestsFromExploration(map);
   const base = resolve(process.cwd(), dir);
@@ -141,6 +144,62 @@ export async function exploreSiteTool(
     formsFound: map.pages.reduce((sum, p) => sum + p.forms.length, 0),
     generated: cases.length,
     written,
+  };
+}
+
+export interface AuthorToolResult {
+  readonly model: string;
+  readonly pagesVisited: number;
+  readonly accepted: number;
+  readonly rejected: { page: string; reason: string }[];
+  readonly written: string[];
+  readonly cases: { file: string; name: string; steps: number }[];
+}
+
+export async function authorTestsTool(
+  url: string,
+  maxPages: number,
+  count: number,
+  dir: string,
+  model: string | undefined,
+  baseUrl: string | undefined,
+): Promise<AuthorToolResult> {
+  const map = await exploreSite(url, { maxPages });
+  const base = resolve(process.cwd(), dir);
+  const options = {
+    ...(model !== undefined ? { model } : {}),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    count,
+  };
+
+  const written: string[] = [];
+  const cases: { file: string; name: string; steps: number }[] = [];
+  const rejected: { page: string; reason: string }[] = [];
+  let seq = 0;
+
+  for (const page of map.pages) {
+    const result = await authorTestsForPage(page, options);
+    for (const reject of result.rejected) {
+      rejected.push({ page: page.url, reason: reject.reason });
+    }
+    for (const testCase of result.accepted) {
+      seq += 1;
+      const file = `authored/${String(seq).padStart(2, '0')}-${testCase.id}.test-case.json`;
+      const target = join(base, file);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, `${JSON.stringify(testCase, null, 2)}\n`, 'utf8');
+      written.push(file);
+      cases.push({ file, name: testCase.name, steps: testCase.steps.length });
+    }
+  }
+
+  return {
+    model: resolveLlm(options).model,
+    pagesVisited: map.pages.length,
+    accepted: cases.length,
+    rejected,
+    written,
+    cases,
   };
 }
 

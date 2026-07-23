@@ -60,6 +60,25 @@ importers:
         specifier: ^8.26.0
         version: 8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@5.5.4)
 
+  packages/agent:
+    dependencies:
+      '@test-orchestrator/browser':
+        specifier: workspace:*
+        version: link:../browser
+      '@test-orchestrator/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@types/node':
+        specifier: ^20.12.0
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^1.6.0
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.43))
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.43)
+
   packages/browser:
     dependencies:
       '@test-orchestrator/core':
@@ -128,6 +147,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.29.0(zod@3.25.76)
+      '@test-orchestrator/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@test-orchestrator/browser':
         specifier: workspace:*
         version: link:../browser

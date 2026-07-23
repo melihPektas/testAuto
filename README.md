@@ -1,7 +1,7 @@
 # test-orchestrator
 
 A small, typed **test orchestration framework** — define test cases as JSON, run
-them through pluggable *runners* (shell, HTTP APIs, n8n workflows, real browsers),
+them through pluggable _runners_ (shell, HTTP APIs, n8n workflows, real browsers),
 and get results as CLI output, JSON, or JUnit XML. Ships with a CLI, a live web
 dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 
@@ -27,8 +27,15 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 - **Generators** — produce test-case files from templates or from URLs.
 - **Ingest** — scan a project, detect its framework (vitest/jest/playwright/mocha),
   and turn existing test files into orchestrator test cases.
+- **Site exploration** — crawl same-origin pages with a real browser and record
+  every link, heading and form field, then generate a test case per page and form.
+- **LLM test author** — hand that exploration to a model and get _realistic_
+  scenarios back: negative cases, multi-step journeys, things rule-based
+  generation cannot invent. **Model output is never trusted** — every scenario
+  must pass the JSON Schema, an allowlist of runner actions, and a same-origin
+  check before it is kept; the rest come back as `rejected` with a reason.
 - **MCP server** — exposes `run_tests`, `list_tests`, `generate_tests`, `test_url`,
-  and `ingest_project` as tools an MCP client can call.
+  `explore_site`, `author_tests`, and `ingest_project` as tools an MCP client can call.
 - **Schema** — JSON Schema (draft 2020-12) + AJV validators for config & test cases.
 - **CLI** — `init`, `generate`, `run`, `report`, `plugin`.
 - **Web dashboard** — browse test cases, run them, and watch results stream live
@@ -36,14 +43,15 @@ dashboard, and an **MCP server** so an AI agent (e.g. Claude) can drive it.
 
 ## 📦 Monorepo layout
 
-| Package | Description |
-| --- | --- |
-| `@test-orchestrator/schema` | JSON Schemas + AJV validators (config, test-case) |
-| `@test-orchestrator/core` | Runtime: engine, runners, reporters, generators, ingest, registry, hooks, errors |
-| `@test-orchestrator/cli` | Command-line entry point (`test-orchestrator` / `to`) |
-| `@test-orchestrator/web` | Dashboard API server + UI (live SSE) |
-| `@test-orchestrator/browser` | Playwright browser runner + URL UI-test generator |
-| `@test-orchestrator/mcp` | MCP server exposing the orchestrator as tools |
+| Package                      | Description                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| `@test-orchestrator/schema`  | JSON Schemas + AJV validators (config, test-case)                                |
+| `@test-orchestrator/core`    | Runtime: engine, runners, reporters, generators, ingest, registry, hooks, errors |
+| `@test-orchestrator/cli`     | Command-line entry point (`test-orchestrator` / `to`)                            |
+| `@test-orchestrator/web`     | Dashboard API server + UI (live SSE)                                             |
+| `@test-orchestrator/browser` | Playwright browser runner, site explorer, URL UI-test generator                  |
+| `@test-orchestrator/agent`   | LLM test author: turns an exploration into validated test cases                  |
+| `@test-orchestrator/mcp`     | MCP server exposing the orchestrator as tools                                    |
 
 ## 🚀 Quick start
 
@@ -80,7 +88,28 @@ Register in your MCP client (e.g. a project `.mcp.json`):
 ```
 
 Tools: `run_tests`, `list_tests`, `generate_tests`, `test_url` (comprehensive
-browser UI audit of a URL), `ingest_project` (adopt an existing test suite).
+browser UI audit of a URL), `explore_site` (crawl and generate tests from what is
+found), `author_tests` (LLM-written scenarios, see below), `ingest_project`
+(adopt an existing test suite).
+
+### LLM test author
+
+`author_tests` explores a site, then asks a model to write scenarios for each
+page. It talks to any **OpenAI-compatible** endpoint — a local Ollama needs no
+key:
+
+```bash
+export TEST_ORCHESTRATOR_LLM_URL=http://localhost:11434/v1
+export TEST_ORCHESTRATOR_LLM_MODEL=qwen2.5-coder:14b
+```
+
+Prefer a **non-reasoning** coder model. Authoring is pure JSON generation, and a
+reasoning model burns most of its time on thinking tokens nobody reads — on the
+same machine, one small reply took **28.7s** from `qwen3:14b` versus **6.5s**
+from `qwen2.5-coder:14b`.
+
+Accepted scenarios are written to `<dir>/authored/`. Rejected ones are never
+written; they are returned with the reason they failed validation.
 
 ## 🧩 Config & test-case format
 
@@ -102,26 +131,41 @@ browser UI audit of a URL), `ingest_project` (adopt an existing test suite).
 `*.test-case.json` examples:
 
 ```json
-{ "id": "hello", "version": "1.0", "name": "shell", "runner": "default",
-  "steps": [{ "action": "echo hello" }] }
+{
+  "id": "hello",
+  "version": "1.0",
+  "name": "shell",
+  "runner": "default",
+  "steps": [{ "action": "echo hello" }]
+}
 ```
 
 ```json
-{ "id": "api-health", "version": "1.0", "name": "backend", "runner": "api",
+{
+  "id": "api-health",
+  "version": "1.0",
+  "name": "backend",
+  "runner": "api",
   "steps": [
     { "action": "request", "target": "GET /health" },
     { "action": "expectStatus", "value": 200 },
     { "action": "expectBody", "value": "healthy" }
-  ] }
+  ]
+}
 ```
 
 ```json
-{ "id": "ui-smoke", "version": "1.0", "name": "UI audit", "runner": "ui",
+{
+  "id": "ui-smoke",
+  "version": "1.0",
+  "name": "UI audit",
+  "runner": "ui",
   "steps": [
     { "action": "goto", "value": "https://example.com" },
     { "action": "expectStatus", "value": 200 },
     { "action": "audit" }
-  ] }
+  ]
+}
 ```
 
 ## 🛠️ Development

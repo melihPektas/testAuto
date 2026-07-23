@@ -1,23 +1,19 @@
 {
-  "name": "@test-orchestrator/mcp",
+  "name": "@test-orchestrator/agent",
   "version": "0.0.1",
-  "description": "MCP server exposing test-orchestrator as tools (run, generate, list, validate)",
+  "description": "LLM-backed intelligence for test-orchestrator: authors meaningful test cases from an exploration",
   "type": "module",
-  "main": "./dist/server.js",
-  "types": "./dist/server.d.ts",
-  "bin": {
-    "test-orchestrator-mcp": "./bin/mcp.js"
-  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
-    "bin"
+    "dist"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -27,15 +23,11 @@
     "test": "vitest run",
     "test:ci": "vitest run --reporter=dot --coverage",
     "check-types": "tsc --noEmit",
-    "start": "node bin/mcp.js",
     "clean": "rm -rf dist .turbo coverage *.tsbuildinfo"
   },
   "dependencies": {
-    "@test-orchestrator/agent": "workspace:*",
-    "@test-orchestrator/core": "workspace:*",
     "@test-orchestrator/browser": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "zod": "^3.23.0"
+    "@test-orchestrator/schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

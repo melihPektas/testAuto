@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "composite": true },
+  "references": [{ "path": "../browser" }, { "path": "../schema" }],
+  "include": ["src/**/*.ts"],
+  "exclude": ["test/**", "dist/**"]
+}
