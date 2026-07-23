@@ -11,12 +11,45 @@ function esc(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
+/** The evidence a failing step carried, rendered for a human reading the report. */
+function renderEvidence(result: TestResult): string {
+  const failing = result.steps.find((s) => s.status === 'fail');
+  const evidence = failing?.evidence;
+  if (evidence === undefined) {
+    return '';
+  }
+  const lines: string[] = [];
+  const say = (label: string, key: string): void => {
+    const value = evidence[key];
+    if (value !== undefined) {
+      lines.push(`${label}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+    }
+  };
+  say('url', 'url');
+  say('selector matched', 'targetCount');
+  say('related selectors', 'similarSelectors');
+  say('failed API calls', 'failedApiCalls');
+  say('visible text', 'excerpt');
+
+  const shot = evidence['screenshot'];
+  // `[[ATTACHMENT|path]]` is the convention Jenkins' JUnit Attachments plugin
+  // (and others) read, so the screenshot shows up next to the failure.
+  const attachment = typeof shot === 'string' ? `\n[[ATTACHMENT|${shot}]]` : '';
+  if (lines.length === 0 && attachment === '') {
+    return '';
+  }
+  return `\n      <system-out>${esc(lines.join('\n'))}${esc(attachment)}</system-out>`;
+}
+
 function renderTestCase(result: TestResult): string {
   const name = esc(result.testCaseName);
   const time = (result.durationMs / 1000).toFixed(3);
   if (result.status === 'fail') {
     const message = esc(result.error?.message ?? 'failed');
-    return `    <testcase name="${name}" time="${time}"><failure message="${message}"></failure></testcase>`;
+    return (
+      `    <testcase name="${name}" time="${time}">` +
+      `<failure message="${message}"></failure>${renderEvidence(result)}\n    </testcase>`
+    );
   }
   return `    <testcase name="${name}" time="${time}"></testcase>`;
 }

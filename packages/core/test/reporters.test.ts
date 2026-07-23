@@ -28,6 +28,22 @@ function result(name: string, status: TestResult['status'], errorMessage?: strin
   return errorMessage === undefined ? base : { ...base, error: { message: errorMessage } };
 }
 
+function failWithEvidence(name: string, evidence: Record<string, unknown>): TestResult {
+  return {
+    testCaseId: name,
+    testCaseName: name,
+    status: 'fail',
+    durationMs: 900,
+    steps: [
+      { status: 'pass', durationMs: 100 },
+      { status: 'fail', durationMs: 800, error: { message: 'timed out' }, evidence },
+    ],
+    error: { message: 'timed out' },
+    startedAt: new Date(),
+    finishedAt: new Date(),
+  };
+}
+
 async function feed(
   reporter: { onEvent?: (e: OrchestratorEvent) => Promise<void> | void },
   results: TestResult[],
@@ -36,7 +52,7 @@ async function feed(
   for (const r of results) {
     await reporter.onEvent?.({ type: 'test:end', result: r });
   }
-  await reporter.onEvent?.({ type: 'run:end', config, totalDurationMs: 42 });
+  await reporter.onEvent?.({ type: 'run:end', config, totalDurationMs: 42, results });
 }
 
 let dir: string;
@@ -78,5 +94,48 @@ describe('createJunitReporter', () => {
     expect(xml).toContain('failures="1"');
     expect(xml).toContain('name="a &amp; b"');
     expect(xml).toContain('<failure message="bad &lt;thing&gt;">');
+  });
+});
+
+describe('createJunitReporter with evidence', () => {
+  it('embeds failure evidence and a screenshot attachment', async () => {
+    const out = join(dir, 'evidence.xml');
+    const reporter = createJunitReporter(out);
+    await feed(reporter, [
+      failWithEvidence('checkout', {
+        url: 'https://shop.test/account',
+        targetCount: 0,
+        similarSelectors: ['.welcome-banner'],
+        excerpt: 'Welcome, ada',
+        screenshot: 'checkout/step-2.png',
+      }),
+    ]);
+    const xml = await readFile(out, 'utf8');
+    expect(xml).toContain('<system-out>');
+    expect(xml).toContain('.welcome-banner');
+    // the Jenkins attachment convention, so a CI can show the screenshot
+    expect(xml).toContain('[[ATTACHMENT|checkout/step-2.png]]');
+  });
+
+  it('carries a failed API call into the report', async () => {
+    const out = join(dir, 'api.xml');
+    const reporter = createJunitReporter(out);
+    await feed(reporter, [
+      failWithEvidence('catalogue', {
+        apiCalls: 3,
+        failedApiCalls: ['GET /api/reviews → 500'],
+      }),
+    ]);
+    const xml = await readFile(out, 'utf8');
+    expect(xml).toContain('/api/reviews');
+  });
+
+  it('leaves a clean failure untouched', async () => {
+    const out = join(dir, 'clean.xml');
+    const reporter = createJunitReporter(out);
+    await feed(reporter, [result('b', 'fail', 'boom')]);
+    const xml = await readFile(out, 'utf8');
+    expect(xml).not.toContain('<system-out>');
+    expect(xml).toContain('message="boom"');
   });
 });

@@ -69,7 +69,10 @@ DOM dispose.
   reporting every finding rather than stopping at the first.
 - **Parallel execution** — run N test cases at once with `-j`. Each lane gets its
   own runner instance, because a runner holds state for the test it is running.
-- **Reporters** — `json` and `junit` files, plus a live console reporter.
+- **Reporters** — `json` and `junit` files, plus a live console reporter. A
+  failing test's evidence — the URL, the selector count, the failed API calls —
+  travels into the JUnit `system-out`, and the screenshot as an
+  `[[ATTACHMENT|…]]` a CI can render next to the failure.
 
 **Understanding failures**
 
