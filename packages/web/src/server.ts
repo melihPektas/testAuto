@@ -1,10 +1,11 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { browserRunnerFactory } from '@test-orchestrator/browser';
 import { executeRun, buildRunnerRegistry } from '@test-orchestrator/core';
+import { formatAjvErrors, validateTestCase } from '@test-orchestrator/schema';
 
 import type { Reporter, RunOptions } from '@test-orchestrator/core';
 
@@ -53,6 +54,65 @@ async function serveStatic(res: ServerResponse, urlPath: string): Promise<void> 
 async function listTests(dir: string): Promise<string[]> {
   const entries = await readdir(dir);
   return entries.filter((f) => f.endsWith('.test-case.json')).sort();
+}
+
+/**
+ * Resolve a test-case file inside `dir`, rejecting path traversal and any file
+ * that is not a `*.test-case.json`.
+ */
+function resolveTestCaseFile(dir: string, file: string): string | undefined {
+  if (!file.endsWith('.test-case.json') || file.includes('/') || file.includes('\\')) {
+    return undefined;
+  }
+  const target = resolve(dir, file);
+  return target.startsWith(resolve(dir)) ? target : undefined;
+}
+
+async function handleGetTestCase(
+  res: ServerResponse,
+  dir: string,
+  file: string,
+): Promise<void> {
+  const target = resolveTestCaseFile(dir, file);
+  if (target === undefined) {
+    sendJson(res, 400, { error: 'invalid test-case file name' });
+    return;
+  }
+  try {
+    sendJson(res, 200, { file, content: await readFile(target, 'utf8') });
+  } catch {
+    sendJson(res, 404, { error: 'test case not found' });
+  }
+}
+
+async function handleSaveTestCase(res: ServerResponse, body: unknown): Promise<void> {
+  const input = (body ?? {}) as { dir?: string; file?: string; content?: string };
+  const dir = resolve(process.cwd(), input.dir ?? '.');
+  const file = input.file ?? '';
+  const content = input.content ?? '';
+
+  const target = resolveTestCaseFile(dir, file);
+  if (target === undefined) {
+    sendJson(res, 400, { error: 'invalid test-case file name' });
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    sendJson(res, 400, { error: `invalid JSON: ${(err as Error).message}` });
+    return;
+  }
+
+  const validated = validateTestCase(parsed);
+  if (!validated.ok) {
+    sendJson(res, 400, { error: `invalid test case: ${formatAjvErrors(validated.errors)}` });
+    return;
+  }
+
+  await writeFile(target, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+  sendJson(res, 200, { ok: true, file });
 }
 
 interface WebConfig {
@@ -149,6 +209,15 @@ export function createDashboardServer(): ReturnType<typeof createServer> {
         if (req.method === 'GET' && url.pathname === '/api/tests') {
           const dir = resolve(process.cwd(), url.searchParams.get('dir') ?? '.');
           sendJson(res, 200, { dir, files: await listTests(dir) });
+          return;
+        }
+        if (req.method === 'GET' && url.pathname === '/api/testcase') {
+          const dir = resolve(process.cwd(), url.searchParams.get('dir') ?? '.');
+          await handleGetTestCase(res, dir, url.searchParams.get('file') ?? '');
+          return;
+        }
+        if (req.method === 'PUT' && url.pathname === '/api/testcase') {
+          await handleSaveTestCase(res, await readBody(req));
           return;
         }
         if (req.method === 'GET' && url.pathname === '/api/config') {

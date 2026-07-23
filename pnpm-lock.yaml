@@ -172,6 +172,9 @@ importers:
       '@test-orchestrator/core':
         specifier: workspace:*
         version: link:../core
+      '@test-orchestrator/schema':
+        specifier: workspace:*
+        version: link:../schema
     devDependencies:
       '@types/node':
         specifier: ^20.12.0

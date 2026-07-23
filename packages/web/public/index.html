@@ -57,6 +57,17 @@
     }
     .muted { color: var(--muted); }
     h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+    ul.tests li a { color: var(--accent); text-decoration: none; cursor: pointer; }
+    ul.tests li a:hover { text-decoration: underline; }
+    #editorText {
+      width: 100%; min-height: 260px; resize: vertical;
+      background: #080c14; color: #d6e2ff; border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.5;
+    }
+    .editor-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .editor-head .file { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+    .ok { color: var(--pass-fg); font-size: 0.82rem; }
   </style>
 </head>
 <body>
@@ -82,6 +93,16 @@
       </div>
       <div id="config"></div>
       <div id="tests"></div>
+    </div>
+
+    <div class="card" id="editorCard" style="display:none">
+      <div class="editor-head">
+        <h2 style="margin:0">Edit test case</h2>
+        <span class="file muted" id="editorFile"></span>
+        <button id="saveBtn" class="primary">Save</button>
+      </div>
+      <textarea id="editorText" spellcheck="false"></textarea>
+      <div id="editorStatus"></div>
     </div>
 
     <div class="card" id="logCard" style="display:none">
@@ -122,7 +143,7 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         box.innerHTML = data.files.length
-          ? `<ul class="tests">${data.files.map((f) => `<li>${f}</li>`).join('')}</ul>`
+          ? `<ul class="tests">${data.files.map((f) => `<li><a data-file="${f}">${f}</a></li>`).join('')}</ul>`
           : '<div class="muted" style="margin-top:0.5rem">No test files found</div>';
       } catch (err) {
         box.innerHTML = `<div class="err">Error: ${err.message}</div>`;
@@ -188,6 +209,51 @@
         $('resultsCard').style.display = 'block';
         finish();
       });
+    });
+    // ---- test-case editor ----
+    let editingFile = null;
+
+    $('tests').addEventListener('click', async (e) => {
+      const link = e.target.closest('a[data-file]');
+      if (!link) return;
+      e.preventDefault();
+      const file = link.dataset.file;
+      const status = $('editorStatus');
+      status.innerHTML = '';
+      try {
+        const res = await fetch(`/api/testcase?dir=${encodeURIComponent(testsDir())}&file=${encodeURIComponent(file)}`);
+        if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+        const data = await res.json();
+        editingFile = data.file;
+        $('editorFile').textContent = data.file;
+        $('editorText').value = data.content.trimEnd();
+        $('editorCard').style.display = 'block';
+        $('editorCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (err) {
+        status.innerHTML = `<div class="err">${err.message}</div>`;
+      }
+    });
+
+    $('saveBtn').addEventListener('click', async () => {
+      if (!editingFile) return;
+      const btn = $('saveBtn');
+      const status = $('editorStatus');
+      btn.disabled = true;
+      status.innerHTML = '<span class="muted">Saving…</span>';
+      try {
+        const res = await fetch('/api/testcase', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir: testsDir(), file: editingFile, content: $('editorText').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        status.innerHTML = '<span class="ok">Saved and validated ✓</span>';
+      } catch (err) {
+        status.innerHTML = `<div class="err">${err.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
     });
   </script>
 </body>

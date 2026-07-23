@@ -73,6 +73,67 @@ describe('dashboard server', () => {
     expect(body.runners).toEqual([{ name: 'default', type: 'shell' }]);
   });
 
+  it('reads a test case for the editor', async () => {
+    const res = await fetch(
+      `${baseUrl}/api/testcase?dir=${encodeURIComponent(dir)}&file=ok.test-case.json`,
+    );
+    const body = (await res.json()) as { file: string; content: string };
+    expect(body.file).toBe('ok.test-case.json');
+    expect(JSON.parse(body.content)).toMatchObject({ id: 'ok' });
+  });
+
+  it('saves an edited test case after validating it', async () => {
+    const edited = JSON.stringify({
+      id: 'ok',
+      version: '1.0',
+      name: 'renamed by editor',
+      runner: 'default',
+      steps: [{ action: 'exit 0' }],
+    });
+    const res = await fetch(`${baseUrl}/api/testcase`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dir, file: 'ok.test-case.json', content: edited }),
+    });
+    expect(res.status).toBe(200);
+
+    const check = await fetch(
+      `${baseUrl}/api/testcase?dir=${encodeURIComponent(dir)}&file=ok.test-case.json`,
+    );
+    const body = (await check.json()) as { content: string };
+    expect(JSON.parse(body.content)).toMatchObject({ name: 'renamed by editor' });
+  });
+
+  it('rejects malformed JSON and schema-invalid test cases', async () => {
+    const bad = await fetch(`${baseUrl}/api/testcase`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dir, file: 'ok.test-case.json', content: '{ not json' }),
+    });
+    expect(bad.status).toBe(400);
+
+    const invalid = await fetch(`${baseUrl}/api/testcase`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        dir,
+        file: 'ok.test-case.json',
+        content: JSON.stringify({ id: 'x', version: '1.0', name: 'no steps', steps: [] }),
+      }),
+    });
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as { error: string }).error).toContain('invalid test case');
+  });
+
+  it('refuses path traversal and non test-case files', async () => {
+    for (const file of ['../secret.json', 'notes.txt', 'sub/dir.test-case.json']) {
+      const res = await fetch(
+        `${baseUrl}/api/testcase?dir=${encodeURIComponent(dir)}&file=${encodeURIComponent(file)}`,
+      );
+      expect(res.status).toBe(400);
+    }
+  });
+
   it('streams live run progress and a final summary over SSE', async () => {
     const res = await fetch(
       `${baseUrl}/api/run/stream?configPath=${encodeURIComponent(join(dir, 'test-orchestrator.config.json'))}&testsDir=${encodeURIComponent(dir)}`,

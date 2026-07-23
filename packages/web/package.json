@@ -29,7 +29,8 @@
   },
   "dependencies": {
     "@test-orchestrator/core": "workspace:*",
-    "@test-orchestrator/browser": "workspace:*"
+    "@test-orchestrator/browser": "workspace:*",
+    "@test-orchestrator/schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
