@@ -114,6 +114,12 @@ export interface StepResult {
   readonly error?: { message: string; code?: string; stack?: string };
   readonly artifacts?: string[];
   readonly retries?: number;
+  /**
+   * What the world looked like when the step failed — captured by the runner,
+   * carried in the report, and read by triage. Free-form so each runner can
+   * record what is meaningful for it.
+   */
+  readonly evidence?: Record<string, unknown>;
 }
 
 export interface TestResult {

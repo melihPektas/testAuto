@@ -15,3 +15,4 @@ examples/**/sample/
 examples/autoex/
 *.csv
 examples/**/results.json
+examples/**/.artifacts/

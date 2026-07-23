@@ -43,6 +43,8 @@ export interface Failure {
   readonly retries?: number;
   /** How the rest of the run went. A failure alone reads very differently. */
   readonly runContext?: RunContext;
+  /** What the page looked like when it failed, captured by the runner. */
+  readonly evidence?: Record<string, unknown>;
 }
 
 export interface Triage {
@@ -150,6 +152,11 @@ Guidance:
 - Weigh the rest of the run first. If tests exercising the SAME feature passed,
   the application is working and the fault is far more likely in this test or in
   the data it used. Only call product-bug when the evidence points at the app.
+- Read "what the page actually showed" before deciding. If the page rendered a
+  related selector instead of the one the step wanted — an error message where a
+  success message was expected — the page is TELLING you why, and it is usually
+  test-data or test-bug, not a broken application.
+- A page that rendered almost no text never really loaded: that is environment.
 - A selector that never appears is usually test-bug, unless earlier steps prove
   the page did render and the element is genuinely missing.
 - A login that leads nowhere, with credentials that look invented
@@ -169,7 +176,43 @@ function describeFailure(failure: Failure): string {
   error: ${failure.message}
   what happened before it:
 ${prior === undefined || prior === '' ? '    (nothing)' : prior}
+${describeEvidence(failure.evidence)}
 ${describeRun(failure.runContext)}`;
+}
+
+function describeEvidence(evidence: Record<string, unknown> | undefined): string {
+  if (evidence === undefined) {
+    return '';
+  }
+  const get = (key: string): unknown => evidence[key];
+  const lines: string[] = [];
+  if (typeof get('url') === 'string') {
+    lines.push(`  the browser was at: ${String(get('url'))}`);
+  }
+  if (typeof get('title') === 'string') {
+    lines.push(`  page title: ${String(get('title'))}`);
+  }
+  if (typeof get('bodyChars') === 'number') {
+    const chars = get('bodyChars') as number;
+    lines.push(
+      `  the page rendered ${String(chars)} characters of text${chars < 50 ? ' — essentially nothing' : ''}`,
+    );
+  }
+  if (typeof get('targetCount') === 'number') {
+    lines.push(
+      `  the selector the step looked for matched ${String(get('targetCount'))} element(s)`,
+    );
+  }
+  const similar = get('similarSelectors');
+  if (Array.isArray(similar) && similar.length > 0) {
+    lines.push(
+      `  but the page DOES contain these related selectors: ${similar.map(String).join(', ')}`,
+    );
+  }
+  if (typeof get('excerpt') === 'string' && String(get('excerpt')).length > 0) {
+    lines.push(`  visible text: "${String(get('excerpt')).slice(0, 240)}"`);
+  }
+  return lines.length === 0 ? '' : `\nWHAT THE PAGE ACTUALLY SHOWED\n${lines.join('\n')}`;
 }
 
 function describeRun(context: RunContext | undefined): string {
@@ -262,6 +305,7 @@ interface ReportStep {
   output?: string;
   retries?: number;
   error?: { message?: string };
+  evidence?: Record<string, unknown>;
 }
 
 interface ReportResult {
@@ -316,6 +360,7 @@ export function failuresFromReport(
         .map((s) => s.output)
         .filter((o): o is string => typeof o === 'string'),
       ...(step?.retries !== undefined ? { retries: step.retries } : {}),
+      ...(step?.evidence !== undefined ? { evidence: step.evidence } : {}),
       runContext,
     });
   }

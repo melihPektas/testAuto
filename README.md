@@ -161,6 +161,19 @@ called it a product bug, and shown that "log in with invalid credentials" had
 passed in the same run — proving the login flow works — it correctly called the
 same failure `test-data`, naming the invented credentials.
 
+Evidence is what turns a guess into a reading. On a failed login the runner
+recorded that `.welcome-message` matched **0** elements, that the page did
+contain `.error-message`, and that its text was _"Invalid email or password."_ —
+so the verdict stopped being inferred from how the credentials looked and became
+a statement about what the page said.
+
+Artifacts land under the workspace's `.artifacts/<test-case-id>/`:
+
+```
+.artifacts/login-with-remember-me/step-7.png    the screenshot
+.artifacts/login-with-remember-me/step-7.json   the facts, also carried in the report
+```
+
 A model that is slow, unreachable or off-contract yields a low-confidence result
 rather than an exception. Triage must never break the run that produced the
 failure.

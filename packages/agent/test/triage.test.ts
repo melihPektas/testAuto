@@ -122,6 +122,58 @@ describe('triageFailure', () => {
   });
 });
 
+describe('evidence reaches the model', () => {
+  it('puts what the page showed into the prompt', async () => {
+    let seen = '';
+    const capture = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => {
+        body += String(c);
+      });
+      req.on('end', () => {
+        seen = body;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    verdict: 'test-data',
+                    confidence: 'high',
+                    reason: 'the page said the credentials were invalid',
+                  }),
+                },
+              },
+            ],
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => capture.listen(0, resolve));
+    const url = `http://127.0.0.1:${(capture.address() as AddressInfo).port}/v1`;
+
+    const t = await triageFailure(
+      failure({
+        evidence: {
+          url: 'http://shop.test/login',
+          title: 'Sign in',
+          bodyChars: 85,
+          excerpt: 'Sign in Invalid email or password.',
+          targetCount: 0,
+          similarSelectors: ['.error-message'],
+        },
+      }),
+      { baseUrl: url, model: 'mock', timeoutMs: 5000 },
+    );
+
+    expect(t.verdict).toBe('test-data');
+    expect(seen).toContain('.error-message');
+    expect(seen).toContain('matched 0 element');
+    await new Promise<void>((resolve) => capture.close(() => resolve()));
+  });
+});
+
 describe('failuresFromReport', () => {
   const report = {
     results: [
@@ -132,7 +184,13 @@ describe('failuresFromReport', () => {
         status: 'fail',
         steps: [
           { status: 'pass', action: 'goto', output: 'navigated to https://shop.test (200)' },
-          { status: 'fail', action: 'expectMinCount', error: { message: 'found 0' }, retries: 0 },
+          {
+            status: 'fail',
+            action: 'expectMinCount',
+            error: { message: 'found 0' },
+            retries: 0,
+            evidence: { url: 'https://shop.test', targetCount: 0 },
+          },
         ],
       },
     ],
@@ -154,6 +212,13 @@ describe('failuresFromReport', () => {
       passed: 1,
       failed: 1,
       passingTests: ['passes'],
+    });
+  });
+
+  it('carries the runner evidence through to triage', () => {
+    expect(failuresFromReport(report)[0]?.evidence).toEqual({
+      url: 'https://shop.test',
+      targetCount: 0,
     });
   });
 

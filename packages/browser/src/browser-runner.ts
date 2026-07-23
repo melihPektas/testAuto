@@ -1,5 +1,7 @@
 import { chromium, type Browser, type Page, type Response } from 'playwright';
 
+import { captureEvidence } from './evidence.js';
+
 import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
 
 export interface BrowserRunnerOptions {
@@ -293,10 +295,25 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
         const result: StepResult = { status: 'pass', durationMs: Date.now() - start };
         return output === undefined ? result : { ...result, output };
       } catch (err) {
-        return {
+        const failed: StepResult = {
           status: 'fail',
           durationMs: Date.now() - start,
           error: { message: (err as Error).message, code: 'ORCH_STEP_FAILED' },
+        };
+        if (page === undefined) {
+          return failed;
+        }
+        const index = ctx.testCase.steps.findIndex((s) => s === ctx.step);
+        const evidence = await captureEvidence(page, {
+          artifactsDir: ctx.workspace.artifacts,
+          testCaseId: ctx.testCase.id,
+          stepIndex: index === -1 ? 0 : index + 1,
+          ...(typeof ctx.step?.target === 'string' ? { target: ctx.step.target } : {}),
+        });
+        return {
+          ...failed,
+          evidence: evidence as unknown as Record<string, unknown>,
+          ...(evidence.screenshot !== undefined ? { artifacts: [evidence.screenshot] } : {}),
         };
       }
     },
