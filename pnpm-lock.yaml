@@ -84,6 +84,9 @@ importers:
       '@test-orchestrator/core':
         specifier: workspace:*
         version: link:../core
+      axe-core:
+        specifier: ^4.12.1
+        version: 4.12.1
       pixelmatch:
         specifier: ^7.2.0
         version: 7.2.0
@@ -1126,6 +1129,10 @@ packages:
 
   assertion-error@1.1.0:
     resolution: {integrity: sha512-jgsaNduz+ndvGyFt3uSuWqvy4lCnIJiovtouQN5JZHOKCS2QuhEdbcQHFhVksz2N2U9hXJo8odG7ETyWlEeuDw==}
+
+  axe-core@4.12.1:
+    resolution: {integrity: sha512-s7iGf5GaVMxEG0ENN9x+xTr7GFZCb1ZP/1uATUpCEK2X78nDB3RwbtFCo9pGAf9ru+VwoQ464DkaLEeRM08wJA==}
+    engines: {node: '>=4'}
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -3795,6 +3802,8 @@ snapshots:
   array-union@2.1.0: {}
 
   assertion-error@1.1.0: {}
+
+  axe-core@4.12.1: {}
 
   balanced-match@1.0.2: {}
 

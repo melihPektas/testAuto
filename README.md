@@ -62,8 +62,9 @@ DOM dispose.
 - **Runners** — `shell` (exit 0 passes), `http` (`request`, `setHeader`,
   `expectStatus`, `expectStatusIn`, `expectBody`, `expectSchema`), `n8n` (POST
   to a workflow webhook), and `browser`: a real
-  Chromium with 19 actions covering navigation, form filling, assertions on
-  title, text, selectors, URL, element counts, and a full `audit`.
+  Chromium with 22 actions covering navigation, form filling, assertions on
+  title, text, selectors, URL, element counts, visual diff, accessibility, and
+  a full `audit`.
 - **Comprehensive UI audit** — one step checks title, rendered body, console
   errors, broken images, link count, meta description and mobile responsiveness,
   reporting every finding rather than stopping at the first.
@@ -76,6 +77,10 @@ DOM dispose.
 
 **Understanding failures**
 
+- **Accessibility** — `expectA11y` injects axe-core and fails on critical/serious
+  WCAG violations (missing alt text, unnamed controls, contrast), naming each
+  rule. Accessibility is a rule engine, not a judgement call — and it is the gap
+  none of the AI test tools we surveyed cover.
 - **Visual regression** — `expectScreenshot` records a baseline on the first run
   and compares against it after, failing when more than a threshold of pixels
   move (0.1% by default) and writing a highlighted diff. Antialiasing noise is

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import axe from 'axe-core';
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 
 import { captureEvidence } from './evidence.js';
@@ -9,6 +10,9 @@ import { compareScreenshots } from './visual.js';
 
 import type { NetworkRecorder } from './network.js';
 import type { Runner, RunContext, RunnerFactory, StepResult } from '@test-orchestrator/core';
+
+/** axe-core's injectable source, evaluated in the page to attach window.axe. */
+const axeSource = axe.source;
 
 /** Filesystem-safe slug for a test-case id used in a path. */
 function slug(value: string): string {
@@ -304,6 +308,49 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
           throw new Error(`horizontal overflow of ${String(overflow)}px at 375px width`);
         }
         return { output: 'no horizontal overflow at mobile width' };
+      }
+      case 'expectA11y': {
+        // Inject axe-core and run it in the page. Accessibility is the gap none
+        // of the AI test tools we surveyed cover, and it is a rule engine, not a
+        // judgement call — exactly the kind of check that belongs in code.
+        await page.evaluate(axeSource);
+        const levels =
+          typeof value === 'string' && value !== ''
+            ? value.split(',').map((s) => s.trim())
+            : ['critical', 'serious'];
+        const result = (await page.evaluate(async (impacts) => {
+          // axe is attached to the window by the injected source.
+          const axe = (
+            window as unknown as {
+              axe: { run: (ctx: Document, opts: unknown) => Promise<unknown> };
+            }
+          ).axe;
+          const run = (await axe.run(document, { resultTypes: ['violations'] })) as {
+            violations: {
+              id: string;
+              impact: string | null;
+              description: string;
+              nodes: unknown[];
+            }[];
+          };
+          return run.violations
+            .filter((v) => v.impact !== null && impacts.includes(v.impact))
+            .map((v) => ({
+              id: v.id,
+              impact: v.impact,
+              description: v.description,
+              nodes: v.nodes.length,
+            }));
+        }, levels)) as { id: string; impact: string | null; description: string; nodes: number }[];
+
+        if (result.length > 0) {
+          const worst = result
+            .slice(0, 4)
+            .map((v) => `${v.impact}: ${v.id} (${String(v.nodes)}×) — ${v.description}`)
+            .join(' | ');
+          throw new Error(`${String(result.length)} accessibility violation(s): ${worst}`);
+        }
+        return { output: `no ${levels.join('/')} accessibility violations` };
       }
       case 'expectScreenshot': {
         // A visual baseline is committed alongside the tests; a diff is a
