@@ -160,7 +160,9 @@ export function registerCommands(program: Command): void {
 
   program
     .command('matrix')
-    .description("Plan a listing page's axes with an LLM, then expand the full combination matrix")
+    .description(
+      'Plan the axes of a listing page with an LLM, then expand the full combination matrix',
+    )
     .argument('<url>', 'the listing/search page to plan from')
     .option('-d, --dir <dir>', 'output directory (cases land in <dir>/matrix/)', '.')
     .option('-l, --limit <n>', 'maximum number of cases to generate', '500')
