@@ -1,5 +1,6 @@
 import type {
   GenerateContext,
+  GeneratorFactory,
   GeneratedFile,
   GeneratedSuite,
   Generator,
@@ -61,3 +62,11 @@ export function createUrlGenerator(): Generator {
     },
   };
 }
+
+/**
+ * Factory for wiring the URL generator into {@link buildGeneratorRegistry} so a
+ * config entry of `{ "type": "url" }` resolves to this generator.
+ *
+ * @public
+ */
+export const urlGeneratorFactory: GeneratorFactory = () => createUrlGenerator();

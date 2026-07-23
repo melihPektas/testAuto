@@ -9,9 +9,11 @@ import {
   createTemplateGenerator,
   createJsonReporter,
   createJunitReporter,
+  buildReporters,
+  buildGeneratorRegistry,
 } from '@test-orchestrator/core';
 
-import { browserRunnerFactory } from '@test-orchestrator/browser';
+import { browserRunnerFactory, urlGeneratorFactory } from '@test-orchestrator/browser';
 
 import { resolveConfig } from '../internal/config-loader.js';
 import { createLogger } from '../internal/logger.js';
@@ -64,8 +66,18 @@ export function registerCommands(program: Command): void {
           temp: resolve(cwd, '.tmp'),
           resolve: (p: string) => resolve(cwd, p),
         };
-        const generators = createGeneratorRegistry();
+        let generators = createGeneratorRegistry();
         generators.register(createTemplateGenerator());
+        try {
+          const { config } = await resolveConfig(undefined);
+          const declared = config.generators ?? [];
+          if (declared.length > 0) {
+            generators = buildGeneratorRegistry(declared, { url: urlGeneratorFactory });
+            logger.info(`using ${declared.length} generator(s) from config`);
+          }
+        } catch {
+          // no config file — fall back to the built-in template generator
+        }
 
         const options: GenerateRunOptions = {
           config: { version: '1.0', name: 'cli-generate', runners: [] },
@@ -131,6 +143,12 @@ export function registerCommands(program: Command): void {
         };
 
         const reporters: Reporter[] = [consoleReporter];
+        // Reporters declared in the config file (json/junit with an output path).
+        const configReporters = buildReporters(config.reporters ?? []);
+        if (configReporters.length > 0) {
+          logger.info(`using ${configReporters.length} reporter(s) from config`);
+          reporters.push(...configReporters);
+        }
         const reporterType = typeof opts['reporter'] === 'string' ? opts['reporter'] : undefined;
         if (reporterType !== undefined) {
           const outPath = typeof opts['out'] === 'string' ? opts['out'] : undefined;
