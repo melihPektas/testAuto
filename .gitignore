@@ -14,3 +14,4 @@ examples/**/matrix/
 examples/**/sample/
 examples/autoex/
 *.csv
+examples/**/results.json
