@@ -1,3 +1,4 @@
+import { mutationsFor, mutateBody } from './fuzz.js';
 import { SAFE_METHODS, sampleFor } from './spec.js';
 
 import type { ApiSpec, Operation, Parameter } from './spec.js';
@@ -24,6 +25,15 @@ export interface GenerateApiOptions {
   readonly authEnv?: string;
   /** Skip the negative cases (missing required parameter, missing auth). */
   readonly happyPathOnly?: boolean;
+  /**
+   * Also generate schema-derived invalid inputs. Each asserts only that the
+   * server does not return 5xx: accepting bad input (2xx) or rejecting it (4xx)
+   * are both defensible, but crashing on it is not. That is what makes this
+   * check free of false positives.
+   */
+  readonly fuzz?: boolean;
+  /** Cap the fuzz cases generated per operation (default 6). */
+  readonly maxFuzzPerOperation?: number;
 }
 
 export interface ApiGeneration {
@@ -157,6 +167,65 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
           { id: 'status', action: 'expectStatusIn', value: ['4xx'] },
         ],
       );
+    }
+
+    // 3b) Schema-derived invalid inputs. The only assertion is "do not 5xx":
+    //     a server may reasonably accept or reject bad input, but it must not
+    //     fall over, and that is a real defect whenever it happens.
+    if (options.fuzz === true) {
+      let made = 0;
+      const cap = options.maxFuzzPerOperation ?? 6;
+
+      for (const p of op.parameters) {
+        if (made >= cap || (p.in !== 'query' && p.in !== 'path')) {
+          continue;
+        }
+        for (const mutation of mutationsFor(p.schema, p.name)) {
+          if (made >= cap) {
+            break;
+          }
+          made += 1;
+          const target = buildTarget(op).replace(
+            new RegExp(`([?&]${p.name}=)[^&]*`),
+            `$1${encodeURIComponent(String(mutation.value))}`,
+          );
+          push(
+            slug(`${base}-fuzz-${mutation.label}`),
+            `${label} with ${mutation.label} → must not 5xx`,
+            [
+              ...auth,
+              { id: 'call', action: 'request', target },
+              { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+            ],
+          );
+        }
+      }
+
+      // Body fields, one at a time, so a failure names one field.
+      const body = op.requestBody;
+      if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+        for (const [key, current] of Object.entries(body)) {
+          if (made >= cap) {
+            break;
+          }
+          const guessed = typeof current === 'number' ? { type: 'number' } : { type: 'string' };
+          const mutation = mutationsFor(guessed, key)[0];
+          if (mutation === undefined) {
+            continue;
+          }
+          made += 1;
+          push(slug(`${base}-fuzz-body-${key}`), `${label} with ${mutation.label} → must not 5xx`, [
+            ...auth,
+            {
+              id: 'call',
+              action: 'request',
+              target: buildTarget(op),
+              value: mutateBody(body, key, mutation.value),
+            },
+            { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+          ]);
+        }
+      }
     }
 
     // 3) A secured operation should refuse an unauthenticated call.

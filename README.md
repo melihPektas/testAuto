@@ -267,6 +267,20 @@ operation it writes:
   requirement the spec claims and the server does not enforce is a real defect
 - an unauthenticated call expecting 401/403, for operations that declare security
 
+`--fuzz` adds schema-derived invalid inputs: the wrong type, a value past a
+declared bound, something outside an enum, a malformed format, an empty string,
+a very long one. Each asserts **only that the server does not return 5xx**.
+
+That single assertion is what makes the check free of false positives. A server
+may reasonably accept bad input or reject it — 2xx and 4xx are both defensible
+— but falling over is not, and it is a real defect every time. Aggressive
+negative tests that demand a 4xx generate noise; this one does not.
+
+On the demoshop API, an unguarded `category[0]` was found by exactly this: the
+empty-string mutation returned 500 while thirteen other fuzz cases passed. The
+empty string is the most commonly unguarded value of all, because it is not
+null — a null check waves it through, and then indexing into it throws.
+
 **Write methods are excluded unless you ask for them.** These tests issue real
 requests; a generator that quietly fires `DELETE` at whatever host it was
 pointed at is worse than one that generates nothing. Pass `--include-writes`

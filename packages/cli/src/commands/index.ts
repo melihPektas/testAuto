@@ -347,6 +347,10 @@ export function registerCommands(program: Command): void {
     .option('--auth-env <var>', 'environment variable holding a bearer token')
     .option('--include-writes', 'also generate POST/PUT/PATCH/DELETE cases (these change data)')
     .option('--happy-path-only', 'skip the negative cases')
+    .option(
+      '--fuzz',
+      'also generate schema-derived invalid inputs (asserts only that the server does not 5xx)',
+    )
     .action(async (spec: string, opts: Record<string, unknown>) => {
       try {
         const api = await loadSpec(spec);
@@ -360,6 +364,7 @@ export function registerCommands(program: Command): void {
           runner: typeof opts['runner'] === 'string' ? opts['runner'] : 'api',
           includeWrites: opts['includeWrites'] === true,
           happyPathOnly: opts['happyPathOnly'] === true,
+          fuzz: opts['fuzz'] === true,
           ...(authEnv !== undefined ? { authEnv } : {}),
         });
 

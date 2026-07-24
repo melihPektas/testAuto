@@ -127,9 +127,15 @@ const server = createServer((req, res) => {
   };
 
   if (url.pathname.startsWith('/api/')) {
+    // A real server does not die on a bad request; it returns 500. Without this
+    // an unhandled throw would take the whole process down.
     if (req.method === 'GET' || req.method === 'DELETE') {
-      if (api(url, send, req.method)) {
-        return;
+      try {
+        if (api(url, send, req.method)) {
+          return;
+        }
+      } catch (err) {
+        return send(500, JSON.stringify({ error: String(err) }), 'application/json');
       }
       return send(404, JSON.stringify({ error: 'not found' }), 'application/json');
     }

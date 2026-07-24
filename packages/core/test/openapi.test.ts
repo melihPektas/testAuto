@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { mutateBody, mutationsFor } from '../src/openapi/fuzz.js';
 import { generateApiTests } from '../src/openapi/generate.js';
 import { parseSpec, sampleFor } from '../src/openapi/spec.js';
 
@@ -223,5 +224,59 @@ describe('stateful chains', () => {
     expect(parsed.steps[2]?.target).toBe('id = id');
     expect(parsed.steps[3]?.target).toBe('GET /products/${id}');
     expect(parsed.steps[5]?.target).toBe('DELETE /products/${id}');
+  });
+});
+
+describe('schema-derived fuzzing', () => {
+  it('derives invalid values from what the schema declares', () => {
+    const numeric = mutationsFor({ type: 'integer', minimum: 1, maximum: 10 }, 'page');
+    const labels = numeric.map((m) => m.label);
+    expect(labels).toContain('page as a string');
+    expect(labels).toContain('page below minimum');
+    expect(labels).toContain('page above maximum');
+    expect(numeric.find((m) => m.label === 'page below minimum')?.value).toBe(0);
+  });
+
+  it('includes the empty string, the most commonly unguarded case', () => {
+    const labels = mutationsFor({ type: 'string' }, 'q').map((m) => m.label);
+    expect(labels).toContain('q empty');
+    expect(labels).toContain('q very long');
+  });
+
+  it('breaks an enum and a format', () => {
+    expect(mutationsFor({ type: 'string', enum: ['a'] }, 'sort')[0]?.label).toContain(
+      'outside its enum',
+    );
+    expect(mutationsFor({ type: 'string', format: 'email' }, 'to').map((m) => m.label)).toContain(
+      'to with a malformed email',
+    );
+  });
+
+  it('mutates one body field and leaves the rest alone', () => {
+    expect(mutateBody({ a: 1, b: 'keep' }, 'a', 'broken')).toEqual({ a: 'broken', b: 'keep' });
+  });
+
+  it('generates nothing extra unless asked', () => {
+    const { cases } = generateApiTests(parseSpec(spec));
+    expect(cases.some((c) => c.name.includes('must not 5xx'))).toBe(false);
+  });
+
+  it('asserts only that the server does not 5xx', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true });
+    const fuzzed = cases.filter((c) => c.name.includes('must not 5xx'));
+    expect(fuzzed.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(fuzzed[0]?.content ?? '{}') as {
+      steps: { action: string; value?: unknown }[];
+    };
+    // accepting or rejecting bad input are both fine; crashing is not
+    expect(parsed.steps.at(-1)).toMatchObject({ action: 'expectStatusIn', value: ['2xx', '4xx'] });
+  });
+
+  it('respects the per-operation cap', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true, maxFuzzPerOperation: 1 });
+    const perOp = cases.filter(
+      (c) => c.name.startsWith('GET /products ') && c.name.includes('5xx'),
+    );
+    expect(perOp.length).toBeLessThanOrEqual(1);
   });
 });
