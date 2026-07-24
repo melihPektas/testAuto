@@ -276,6 +276,11 @@ may reasonably accept bad input or reject it — 2xx and 4xx are both defensible
 — but falling over is not, and it is a real defect every time. Aggressive
 negative tests that demand a 4xx generate noise; this one does not.
 
+Body fields are mutated one at a time from **their own schema** — a numeric
+field gets "as a string", a string field gets empty and very-long — with the
+rest of the payload left valid, so a failure names one field. Required fields
+are also dropped in turn.
+
 On the demoshop API, an unguarded `category[0]` was found by exactly this: the
 empty-string mutation returned 500 while thirteen other fuzz cases passed. The
 empty string is the most commonly unguarded value of all, because it is not

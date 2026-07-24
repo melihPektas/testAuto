@@ -25,6 +25,8 @@ export interface Operation {
   readonly responseSchema: unknown;
   /** Example or schema-derived body for a request that needs one. */
   readonly requestBody: unknown;
+  /** The request body's JSON schema, when it declares one — used for fuzzing. */
+  readonly requestBodySchema: unknown;
   readonly requestBodyRequired: boolean;
   /** Whether the operation declares any security requirement. */
   readonly secured: boolean;
@@ -241,6 +243,7 @@ export function parseSpec(document: unknown): ApiSpec {
         successStatuses: successStatuses.length > 0 ? successStatuses : [200],
         responseSchema,
         requestBody: bodyExample ?? (bodySchema === undefined ? undefined : sampleFor(bodySchema)),
+        requestBodySchema: bodySchema,
         requestBodyRequired: isDict(bodyNode) && bodyNode['required'] === true,
         secured: Array.isArray(security) && security.length > 0,
       });

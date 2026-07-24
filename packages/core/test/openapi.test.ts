@@ -280,3 +280,49 @@ describe('schema-derived fuzzing', () => {
     expect(perOp.length).toBeLessThanOrEqual(1);
   });
 });
+
+describe('body fuzzing from the schema', () => {
+  it('mutates each body field using its own declared type', () => {
+    const { cases } = generateApiTests(parseSpec(spec), {
+      fuzz: true,
+      includeWrites: true,
+      maxFuzzPerOperation: 20,
+    });
+    const bodyCases = cases.filter((c) => c.name.startsWith('POST /products with'));
+    const names = bodyCases.map((c) => c.name).join('\n');
+    // price is a number in the schema, name is a string — different mutations
+    expect(names).toContain('price as a string');
+    expect(names).toContain('name empty');
+  });
+
+  it('leaves the other fields intact so a failure names one field', () => {
+    const { cases } = generateApiTests(parseSpec(spec), {
+      fuzz: true,
+      includeWrites: true,
+      maxFuzzPerOperation: 20,
+    });
+    const one = cases.find((c) => c.name.includes('price as a string'));
+    const parsed = JSON.parse(one?.content ?? '{}') as {
+      steps: { value?: Record<string, unknown> }[];
+    };
+    const body = parsed.steps[0]?.value;
+    expect(body?.['price']).toBe('not-a-number');
+    // the valid example value for name survives
+    expect(body?.['name']).toBe('Blue mug');
+  });
+
+  it('drops a required field to see whether that crashes the server', () => {
+    const { cases } = generateApiTests(parseSpec(spec), {
+      fuzz: true,
+      includeWrites: true,
+      maxFuzzPerOperation: 30,
+    });
+    const dropped = cases.find((c) => c.name.includes('without "id"'));
+    expect(dropped).toBeDefined();
+    const parsed = JSON.parse(dropped?.content ?? '{}') as {
+      steps: { value?: Record<string, unknown> }[];
+    };
+    expect(parsed.steps[0]?.value).not.toHaveProperty('id');
+    expect(parsed.steps[0]?.value).toHaveProperty('name');
+  });
+});

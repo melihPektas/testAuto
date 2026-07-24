@@ -1,4 +1,4 @@
-import { mutationsFor, mutateBody } from './fuzz.js';
+import { mutationsFor, mutateBody, omitFromBody } from './fuzz.js';
 import { SAFE_METHODS, sampleFor } from './spec.js';
 
 import type { ApiSpec, Operation, Parameter } from './spec.js';
@@ -201,29 +201,67 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
         }
       }
 
-      // Body fields, one at a time, so a failure names one field.
+      // Body fields, one at a time, so a failure names one field. The mutations
+      // come from each property's own schema rather than a guess at its type.
       const body = op.requestBody;
-      if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
-        for (const [key, current] of Object.entries(body)) {
+      const schema = op.requestBodySchema;
+      const properties =
+        typeof schema === 'object' && schema !== null
+          ? ((schema as Record<string, unknown>)['properties'] as
+              Record<string, unknown> | undefined)
+          : undefined;
+      const requiredFields =
+        typeof schema === 'object' &&
+        schema !== null &&
+        Array.isArray((schema as Record<string, unknown>)['required'])
+          ? ((schema as Record<string, unknown>)['required'] as unknown[]).map(String)
+          : [];
+
+      if (properties !== undefined && typeof body === 'object' && body !== null) {
+        for (const [key, propSchema] of Object.entries(properties)) {
+          for (const mutation of mutationsFor(propSchema, key)) {
+            if (made >= cap) {
+              break;
+            }
+            made += 1;
+            push(
+              slug(`${base}-fuzz-body-${mutation.label}`),
+              `${label} with ${mutation.label} → must not 5xx`,
+              [
+                ...auth,
+                {
+                  id: 'call',
+                  action: 'request',
+                  target: buildTarget(op),
+                  value: mutateBody(body, key, mutation.value),
+                },
+                { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+              ],
+            );
+          }
+        }
+
+        // A missing required field is the other half: whether the server
+        // rejects it or fills a default, it must not fall over.
+        for (const key of requiredFields) {
           if (made >= cap) {
             break;
           }
-          const guessed = typeof current === 'number' ? { type: 'number' } : { type: 'string' };
-          const mutation = mutationsFor(guessed, key)[0];
-          if (mutation === undefined) {
-            continue;
-          }
           made += 1;
-          push(slug(`${base}-fuzz-body-${key}`), `${label} with ${mutation.label} → must not 5xx`, [
-            ...auth,
-            {
-              id: 'call',
-              action: 'request',
-              target: buildTarget(op),
-              value: mutateBody(body, key, mutation.value),
-            },
-            { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
-          ]);
+          push(
+            slug(`${base}-fuzz-body-without-${key}`),
+            `${label} without "${key}" → must not 5xx`,
+            [
+              ...auth,
+              {
+                id: 'call',
+                action: 'request',
+                target: buildTarget(op),
+                value: omitFromBody(body, key),
+              },
+              { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+            ],
+          );
         }
       }
     }
