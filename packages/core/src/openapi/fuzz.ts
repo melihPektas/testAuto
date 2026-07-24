@@ -101,3 +101,29 @@ export function omitFromBody(body: unknown, key: string): unknown {
   delete copy[key];
   return copy;
 }
+
+/**
+ * Inputs that historically break unguarded handlers: a path that climbs out of
+ * its directory, quote characters that end up inside a query, a null byte, a
+ * script tag. These are the shapes a real request can take, and the assertion
+ * on them is the same as every other fuzz case — the server may accept or
+ * reject them, but it must not fall over.
+ *
+ * They are not exploits: nothing here tries to extract data or gain access. A
+ * handler that survives them tells you its input handling is guarded.
+ *
+ * @public
+ */
+export function hostilePayloads(name = ''): Mutation[] {
+  const label = name === '' ? 'value' : name;
+  return [
+    { label: `${label} climbing out of its path`, value: '../../../etc/passwd' },
+    { label: `${label} with a quote`, value: "o'brien" },
+    { label: `${label} with a null byte`, value: 'a\u0000b' },
+    { label: `${label} with a script tag`, value: '<script>x</script>' },
+    { label: `${label} with a brace`, value: '{{7*7}}' },
+    // A stray percent is not valid URL encoding; decodeURIComponent throws on
+    // it, and plenty of handlers decode a second time without guarding.
+    { label: `${label} with a stray percent`, value: '%zz' },
+  ];
+}

@@ -276,6 +276,18 @@ may reasonably accept bad input or reject it — 2xx and 4xx are both defensible
 — but falling over is not, and it is a real defect every time. Aggressive
 negative tests that demand a 4xx generate noise; this one does not.
 
+It also sends the shapes that break unguarded handlers — a path that climbs out
+of its directory, a quote, a null byte, a script tag, a stray percent — and,
+with `--include-writes`, chains them: create a real resource, then read it back
+with a broken id, so the server is in a real state rather than answering a cold
+lookup. Hostile inputs are generated first, so when the per-operation cap cuts
+the list the cases most likely to find a crash are the ones that survive.
+
+Payloads are URL-encoded into a single path segment. That keeps a generated
+suite from actually walking a directory, and it means this finds handler bugs
+rather than encoding-layer ones — a double-decode bug needs a raw request and is
+out of scope here.
+
 Body fields are mutated one at a time from **their own schema** — a numeric
 field gets "as a string", a string field gets empty and very-long — with the
 rest of the payload left valid, so a failure names one field. Required fields

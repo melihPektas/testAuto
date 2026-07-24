@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mutateBody, mutationsFor } from '../src/openapi/fuzz.js';
+import { hostilePayloads, mutateBody, mutationsFor } from '../src/openapi/fuzz.js';
 import { generateApiTests } from '../src/openapi/generate.js';
 import { parseSpec, sampleFor } from '../src/openapi/spec.js';
 
@@ -324,5 +324,93 @@ describe('body fuzzing from the schema', () => {
     };
     expect(parsed.steps[0]?.value).not.toHaveProperty('id');
     expect(parsed.steps[0]?.value).toHaveProperty('name');
+  });
+});
+
+describe('hostile payloads', () => {
+  it('covers the shapes that break unguarded handlers', () => {
+    const labels = hostilePayloads('q').map((m) => m.label);
+    expect(labels).toContain('q climbing out of its path');
+    expect(labels).toContain('q with a quote');
+    expect(labels).toContain('q with a null byte');
+  });
+
+  it('names the value when there is no field name', () => {
+    expect(hostilePayloads()[0]?.label).toBe('value climbing out of its path');
+  });
+
+  it('carries real payload strings, not placeholders', () => {
+    const values = hostilePayloads('x').map((m) => String(m.value));
+    expect(values).toContain('../../../etc/passwd');
+    expect(values.some((v) => v.includes('<script>'))).toBe(true);
+  });
+});
+
+describe('stateful fuzzing', () => {
+  it('creates a resource before reading it with a broken id', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true, includeWrites: true });
+    const chained = cases.find((c) => c.name.includes('then read with'));
+    expect(chained).toBeDefined();
+    const parsed = JSON.parse(chained?.content ?? '{}') as {
+      steps: { id: string; action: string; target?: string; value?: unknown }[];
+    };
+    // create first, so the server holds real state when the bad id arrives
+    expect(parsed.steps[0]?.target).toBe('POST /products');
+    expect(parsed.steps.map((s) => s.action)).toEqual([
+      'request',
+      'expectStatusIn',
+      'request',
+      'expectStatusIn',
+    ]);
+    // and the assertion is still only "do not fall over"
+    expect(parsed.steps.at(-1)?.value).toEqual(['2xx', '4xx']);
+  });
+
+  it('does not chain-fuzz without both writes and fuzz', () => {
+    expect(
+      generateApiTests(parseSpec(spec), { includeWrites: true }).cases.some((c) =>
+        c.name.includes('then read with'),
+      ),
+    ).toBe(false);
+    expect(
+      generateApiTests(parseSpec(spec), { fuzz: true }).cases.some((c) =>
+        c.name.includes('then read with'),
+      ),
+    ).toBe(false);
+  });
+
+  it('url-encodes a hostile id into the path', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true, includeWrites: true });
+    const traversal = cases.find(
+      (c) => c.name.includes('then read with') && c.name.includes('climbing out of its path'),
+    );
+    const parsed = JSON.parse(traversal?.content ?? '{}') as { steps: { target?: string }[] };
+    // encoded, so it is one path segment rather than an actual directory climb
+    expect(parsed.steps[2]?.target).toContain('%2F');
+    expect(parsed.steps[2]?.target).not.toContain('../');
+  });
+});
+
+describe('fuzzing a path parameter', () => {
+  it('puts the mutated value into the path, not just the query', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true });
+    const pathFuzz = cases.find(
+      (c) => c.name.startsWith('GET /products/{id} with') && c.name.includes('stray percent'),
+    );
+    expect(pathFuzz).toBeDefined();
+    const parsed = JSON.parse(pathFuzz?.content ?? '{}') as { steps: { target?: string }[] };
+    // the id segment carries the payload; it is not the sample id any more
+    expect(parsed.steps[0]?.target).toContain('%25zz');
+    expect(parsed.steps[0]?.target).not.toBe('GET /products/1');
+  });
+
+  it('still mutates a query parameter in place', () => {
+    const { cases } = generateApiTests(parseSpec(spec), { fuzz: true });
+    const queryFuzz = cases.find(
+      (c) => c.name.startsWith('GET /products with') && c.name.includes('empty'),
+    );
+    const parsed = JSON.parse(queryFuzz?.content ?? '{}') as { steps: { target?: string }[] };
+    expect(parsed.steps[0]?.target).toContain('category=');
+    expect(parsed.steps[0]?.target).not.toContain('category=test');
   });
 });

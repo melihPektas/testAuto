@@ -1,4 +1,4 @@
-import { mutationsFor, mutateBody, omitFromBody } from './fuzz.js';
+import { hostilePayloads, mutationsFor, mutateBody, omitFromBody } from './fuzz.js';
 import { SAFE_METHODS, sampleFor } from './spec.js';
 
 import type { ApiSpec, Operation, Parameter } from './spec.js';
@@ -32,7 +32,7 @@ export interface GenerateApiOptions {
    * check free of false positives.
    */
   readonly fuzz?: boolean;
-  /** Cap the fuzz cases generated per operation (default 6). */
+  /** Cap the fuzz cases generated per operation (default 10). */
   readonly maxFuzzPerOperation?: number;
 }
 
@@ -56,25 +56,34 @@ function opName(op: Operation): string {
   return op.operationId ?? `${op.method}-${slug(op.path)}`;
 }
 
-/** Fill path placeholders and append a query string. */
-function buildTarget(op: Operation, omit?: Parameter): string {
+/**
+ * Fill path placeholders and append a query string. `override` replaces one
+ * parameter's value wherever it lives — a path placeholder or a query value —
+ * which is how a fuzz case reaches a path parameter at all.
+ */
+function buildTarget(
+  op: Operation,
+  omit?: Parameter,
+  override?: { name: string; value: unknown },
+): string {
+  const valueFor = (p: Parameter): string =>
+    String(
+      override !== undefined && override.name === p.name
+        ? override.value
+        : (p.example ?? sampleFor(p.schema, p.name)),
+    );
+
   let path = op.path;
   for (const p of op.parameters) {
     if (p.in !== 'path' || p === omit) {
       continue;
     }
-    path = path.replace(
-      `{${p.name}}`,
-      encodeURIComponent(String(p.example ?? sampleFor(p.schema, p.name))),
-    );
+    path = path.replace(`{${p.name}}`, encodeURIComponent(valueFor(p)));
   }
 
   const query = op.parameters
-    .filter((p) => p.in === 'query' && p.required && p !== omit)
-    .map(
-      (p) =>
-        `${encodeURIComponent(p.name)}=${encodeURIComponent(String(p.example ?? sampleFor(p.schema, p.name)))}`,
-    )
+    .filter((p) => p.in === 'query' && (p.required || override?.name === p.name) && p !== omit)
+    .map((p) => `${encodeURIComponent(p.name)}=${encodeURIComponent(valueFor(p))}`)
     .join('&');
 
   return `${op.method.toUpperCase()} ${path}${query === '' ? '' : `?${query}`}`;
@@ -174,21 +183,20 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
     //     fall over, and that is a real defect whenever it happens.
     if (options.fuzz === true) {
       let made = 0;
-      const cap = options.maxFuzzPerOperation ?? 6;
+      const cap = options.maxFuzzPerOperation ?? 10;
 
       for (const p of op.parameters) {
         if (made >= cap || (p.in !== 'query' && p.in !== 'path')) {
           continue;
         }
-        for (const mutation of mutationsFor(p.schema, p.name)) {
+        // Hostile inputs first: when the cap cuts the list, the cases most
+        // likely to find a real crash are the ones that survive.
+        for (const mutation of [...hostilePayloads(p.name), ...mutationsFor(p.schema, p.name)]) {
           if (made >= cap) {
             break;
           }
           made += 1;
-          const target = buildTarget(op).replace(
-            new RegExp(`([?&]${p.name}=)[^&]*`),
-            `$1${encodeURIComponent(String(mutation.value))}`,
-          );
+          const target = buildTarget(op, undefined, { name: p.name, value: mutation.value });
           push(
             slug(`${base}-fuzz-${mutation.label}`),
             `${label} with ${mutation.label} → must not 5xx`,
@@ -280,6 +288,32 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
   //    "does not exist until the POST returns it" comes from.
   if (options.includeWrites === true) {
     for (const chain of resourceChains(spec.operations)) {
+      // A created resource, then a broken id: the server is in a real state
+      // rather than empty, which is a different code path from a cold lookup.
+      if (options.fuzz === true) {
+        for (const mutation of hostilePayloads(chain.idField).slice(0, 2)) {
+          push(
+            slug(`${opName(chain.create)}-chain-fuzz-${mutation.label}`),
+            `${chain.label} then read with ${mutation.label} → must not 5xx`,
+            [
+              ...auth,
+              {
+                id: 'create',
+                action: 'request',
+                target: buildTarget(chain.create),
+                value: chain.create.requestBody ?? {},
+              },
+              { id: 'created', action: 'expectStatusIn', value: chain.create.successStatuses },
+              {
+                id: 'read',
+                action: 'request',
+                target: `GET ${chain.itemPath.replace(`{${chain.pathParam}}`, encodeURIComponent(String(mutation.value)))}`,
+              },
+              { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+            ],
+          );
+        }
+      }
       push(slug(`${opName(chain.create)}-lifecycle`), `${chain.label} lifecycle`, [
         ...auth,
         {
