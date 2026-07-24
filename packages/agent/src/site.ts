@@ -118,7 +118,12 @@ export async function matrixSite(
  *
  * @public
  */
-export async function writeAuthored(baseDir: string, cases: AuthoredCase[]): Promise<string[]> {
+export async function writeAuthored(
+  baseDir: string,
+  // Only the path and the content are used, so anything that produces test-case
+  // files can hand them here — the explorer's output as well as the author's.
+  cases: readonly { path: string; content: string }[],
+): Promise<string[]> {
   const base = resolve(process.cwd(), baseDir);
   const written: string[] = [];
   for (const testCase of cases) {

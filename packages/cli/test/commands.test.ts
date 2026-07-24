@@ -35,6 +35,7 @@ describe('CLI Commands Registration', () => {
       'review',
       'run',
       'triage',
+      'try',
     ]);
   });
 });

@@ -13,22 +13,22 @@ let server: Server;
 let baseUrl: string;
 const submissions: string[] = [];
 
-const HOME = `<html><head><title>Home</title><meta name="description" content="demo home"></head>
+const HOME = `<html lang="en"><head><title>Home</title><meta name="description" content="demo home"></head>
 <body><h1>Welcome</h1>
 <a href="/about">About</a> <a href="/contact">Contact</a>
-<form action="/search" method="get"><input name="q" type="search" /><button type="submit">Go</button></form>
+<form action="/search" method="get"><label>Search <input name="q" type="search" /></label><button type="submit">Go</button></form>
 </body></html>`;
 
-const ABOUT = `<html><head><title>About</title><meta name="description" content="about us"></head>
+const ABOUT = `<html lang="en"><head><title>About</title><meta name="description" content="about us"></head>
 <body><h1>About</h1><a href="/">Home</a></body></html>`;
 
-const CONTACT = `<html><head><title>Contact</title><meta name="description" content="contact us"></head>
+const CONTACT = `<html lang="en"><head><title>Contact</title><meta name="description" content="contact us"></head>
 <body><h1>Contact</h1>
 <form action="/contact" method="post">
-  <input name="fullname" type="text" required />
-  <input name="email" type="email" required />
-  <textarea name="message"></textarea>
-  <input name="subscribe" type="checkbox" />
+  <label>Name <input name="fullname" type="text" required /></label>
+  <label>Email <input name="email" type="email" required /></label>
+  <label>Message <textarea name="message"></textarea></label>
+  <label><input name="subscribe" type="checkbox" /> Subscribe</label>
   <button type="submit">Send</button>
 </form>
 <a href="/">Home</a></body></html>`;
@@ -132,4 +132,34 @@ describe('generateTestsFromExploration', () => {
     expect(summary.total).toBeGreaterThan(0);
     expect(summary.failed).toBe(0);
   }, 120000);
+});
+
+describe('the model-free suite', () => {
+  it('audits, checks accessibility and watches the network on every page', () => {
+    const map = {
+      origin: 'https://shop.test',
+      startUrl: 'https://shop.test/',
+      pages: [
+        {
+          url: 'https://shop.test/',
+          title: 'Home',
+          status: 200,
+          links: [],
+          headings: ['Home'],
+          repeated: [],
+          forms: [],
+        },
+      ],
+    };
+    const [audit] = generateTestsFromExploration(map);
+    const parsed = JSON.parse(audit?.content ?? '{}') as { steps: { action: string }[] };
+    // this is the half of the product that runs with no model and no key
+    expect(parsed.steps.map((s) => s.action)).toEqual([
+      'goto',
+      'expectStatus',
+      'audit',
+      'expectNoFailedRequests',
+      'expectA11y',
+    ]);
+  });
 });

@@ -309,11 +309,14 @@ export function generateTestsFromExploration(map: SiteMap, runner = 'ui'): Gener
   for (const page of map.pages) {
     const slug = pageSlug(page.url, map.origin);
 
-    // 1) One audit per discovered page.
+    // 1) One audit per discovered page. Everything here is rule-based, so this
+    //    is the half of the product that needs no model at all.
     push(`audit-${slug}`, `UI audit: ${page.url}`, [
       { id: 'goto', action: 'goto', value: page.url },
       { id: 'status', action: 'expectStatus', value: 200 },
       { id: 'audit', action: 'audit' },
+      { id: 'network', action: 'expectNoFailedRequests' },
+      { id: 'a11y', action: 'expectA11y' },
     ]);
 
     // 2) One fill-and-submit flow per form that has inputs and a submit control.

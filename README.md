@@ -138,32 +138,46 @@ DOM dispose.
 | `@test-orchestrator/web`     | Dashboard API server + UI (live SSE)                                            |
 | `@test-orchestrator/mcp`     | MCP server exposing the orchestrator as tools                                   |
 
-## 🚀 Quick start
+## 🚀 Try it in one command
 
 ```bash
-pnpm install
-pnpm build
+pnpm install && pnpm build
 pnpm --filter @test-orchestrator/browser exec playwright install chromium
 ```
 
-Then run the whole loop against the bundled example app:
-
 ```bash
-node examples/demoshop/server.mjs
+node packages/cli/bin/test-orchestrator.js try https://your-site.example.com
 ```
 
-```bash
-cd examples/demoshop
-export TEST_ORCHESTRATOR_LLM_URL=http://localhost:11434/v1
+That crawls the site, writes a test suite, runs it, and leaves an HTML report.
+**No config file, no model, no API key** — the whole of that path is rule-based:
+per-page audits, accessibility, network health, and a fill-and-submit flow for
+every form it finds.
 
-node ../../packages/cli/bin/test-orchestrator.js author http://localhost:4700/ -p 2
-node ../../packages/cli/bin/test-orchestrator.js run -t authored -j 4 --reporter json --out results.json
-node ../../packages/cli/bin/test-orchestrator.js triage -i results.json -t authored
-node ../../packages/cli/bin/test-orchestrator.js repair -i results.json -t authored
+```
+looking at https://your-site.example.com …
+found 3 page(s), 1 form(s)
+wrote 5 test case(s)
+  ✓ UI audit: /about
+  ✓ UI audit: /login
+  ✕ Form flow (3 field(s)) on /login
+      1 console error(s): Failed to load resource: 401 (Unauthorized)
+4 passed, 1 failed — report: .test-orchestrator/report.html
+the suite is in .test-orchestrator/explored/ — keep it, edit it, run it in CI
 ```
 
-`examples/demoshop` is a four-page app — home, about, sign-in and account — whose
-login really does reject bad credentials, so failures there are real failures.
+The suite it leaves behind is plain JSON you own: commit it, edit it, run it in
+CI. A model is what you add next, to get scenarios a rule cannot invent — but
+nothing above needs one.
+
+### The rest of the loop
+
+```bash
+node packages/cli/bin/test-orchestrator.js api https://api.example.com/openapi.json -d backend --fuzz
+node packages/cli/bin/test-orchestrator.js run -t backend/api -j 4 --reporter html --out report.html
+```
+
+Also model-free: API tests from a spec, fuzzing, response conformance.
 
 ## 🤖 Connecting a model
 

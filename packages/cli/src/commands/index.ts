@@ -23,6 +23,8 @@ import {
 } from '@test-orchestrator/agent';
 import {
   browserRunnerFactory,
+  exploreSite,
+  generateTestsFromExploration,
   generateTestsFromObservation,
   observeApiCalls,
   urlGeneratorFactory,
@@ -207,6 +209,75 @@ export function registerCommands(program: Command): void {
         logger.info(`generated ${summary.count} file(s)`);
       } catch (err) {
         logger.error(`failed to generate: ${(err as Error).message}`);
+      }
+    });
+
+  program
+    .command('try')
+    .description('Point it at a URL and see what it finds — no config, no model, no key')
+    .argument('<url>', 'the site to look at')
+    .option('-p, --pages <n>', 'how many same-origin pages to visit', '3')
+    .option('-d, --dir <dir>', 'where to keep the generated suite', '.test-orchestrator')
+    .action(async (url: string, opts: Record<string, unknown>) => {
+      try {
+        const dir = typeof opts['dir'] === 'string' ? opts['dir'] : '.test-orchestrator';
+        const rawPages = opts['pages'];
+        const parsed = Number.parseInt(typeof rawPages === 'string' ? rawPages : '', 10);
+        const maxPages = Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+
+        logger.info(`looking at ${url} …`);
+        const map = await exploreSite(url, { maxPages });
+        logger.info(
+          `found ${String(map.pages.length)} page(s), ${String(
+            map.pages.reduce((n, p) => n + p.forms.length, 0),
+          )} form(s)`,
+        );
+
+        // Everything generated here is rule-based: audits, accessibility,
+        // network health, form flows. No model is involved, so this works with
+        // nothing installed and no key anywhere.
+        const cases = generateTestsFromExploration(map);
+        const written = await writeAuthored(dir, cases);
+        logger.info(`wrote ${String(written.length)} test case(s)`);
+
+        const config = {
+          version: '1.0',
+          name: 'try',
+          runners: [{ name: 'ui', type: 'browser' }],
+        } as unknown as RunOptions['config'];
+        const testsDir = resolve(process.cwd(), dir, 'explored');
+        const files = (await readdir(testsDir)).filter((f) => f.endsWith('.test-case.json')).sort();
+        const testCases: unknown[] = [];
+        for (const file of files) {
+          testCases.push(JSON.parse(await readFile(join(testsDir, file), 'utf8')));
+        }
+
+        const reportPath = resolve(process.cwd(), dir, 'report.html');
+        const makeRunners = (): ReturnType<typeof buildRunnerRegistry> =>
+          buildRunnerRegistry([{ name: 'ui', type: 'browser' }], { browser: browserRunnerFactory });
+        const summary = await executeRun({
+          config,
+          testCases: testCases as RunOptions['testCases'],
+          runners: makeRunners(),
+          reporters: [createHtmlReporter(reportPath, resolve(process.cwd(), '.artifacts'))],
+          concurrency: 4,
+          createRunners: makeRunners,
+        });
+
+        for (const result of summary.results) {
+          const mark = result.status === 'pass' ? '✓' : result.status === 'flaky' ? '~' : '✕';
+          logger.info(`  ${mark} ${result.testCaseName}`);
+          if (result.error?.message !== undefined) {
+            logger.warn(`      ${result.error.message.split('\n')[0]}`);
+          }
+        }
+        logger.info(
+          `${String(summary.passed)} passed, ${String(summary.failed)} failed — report: ${reportPath}`,
+        );
+        logger.info(`the suite is in ${dir}/explored/ — keep it, edit it, run it in CI`);
+      } catch (err) {
+        logger.error(`failed: ${(err as Error).message}`);
+        process.exitCode = 1;
       }
     });
 
