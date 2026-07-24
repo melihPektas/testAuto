@@ -54,6 +54,22 @@ async function renderCase(result: TestResult, artifactsDir: string): Promise<str
   const evidence: Record<string, unknown> = failing?.evidence ?? {};
   const shot = await inlineShot(artifactsDir, evidence['screenshot']);
 
+  // A visual regression is the one failure you cannot read — show the three
+  // images side by side instead of naming a file path nobody will open.
+  const [vBase, vActual, vDiff] = await Promise.all([
+    inlineShot(artifactsDir, evidence['visualBaseline']),
+    inlineShot(artifactsDir, evidence['visualActual']),
+    inlineShot(artifactsDir, evidence['visualDiff']),
+  ]);
+  const visual =
+    vDiff === undefined && vActual === undefined
+      ? ''
+      : `<div class="visual"><div class="vhead">visual difference — ${esc(evidence['visualRatio'])}% of pixels</div><div class="vrow">
+          ${vBase === undefined ? '' : `<figure><img src="${vBase}" alt="baseline" /><figcaption>baseline</figcaption></figure>`}
+          ${vActual === undefined ? '' : `<figure><img src="${vActual}" alt="actual" /><figcaption>actual</figcaption></figure>`}
+          ${vDiff === undefined ? '' : `<figure><img src="${vDiff}" alt="difference" /><figcaption>diff</figcaption></figure>`}
+        </div></div>`;
+
   const steps = result.steps
     .map((s) => {
       const mark = s.status === 'pass' ? '✓' : s.status === 'flaky' ? '~' : '✕';
@@ -66,7 +82,8 @@ async function renderCase(result: TestResult, artifactsDir: string): Promise<str
     <summary><span class="badge ${result.status}">${result.status.toUpperCase()}</span> ${esc(result.testCaseName)} <span class="ms">${String(result.durationMs)}ms</span></summary>
     <div class="steps">${steps}</div>
     ${Object.keys(evidence).length > 0 ? `<div class="evidence">${evidenceRows(evidence)}</div>` : ''}
-    ${shot !== undefined ? `<img class="shot" loading="lazy" alt="page when the step failed" src="${shot}" />` : ''}
+    ${visual}
+    ${shot !== undefined && visual === '' ? `<img class="shot" loading="lazy" alt="page when the step failed" src="${shot}" />` : ''}
   </details>`;
 }
 
@@ -129,6 +146,13 @@ export function createHtmlReporter(outputPath: string, artifactsDir = '.artifact
   .ev { display:flex; gap:.5rem; padding:.12rem 0; } .ev span { color:var(--dim); min-width:130px; }
   .ev code { color:#cfe0ff; font-family:ui-monospace,monospace; }
   .shot { display:block; max-width:100%; margin:.6rem 1.1rem 1.1rem; border:1px solid var(--line); border-radius:8px; }
+  .visual { padding:.6rem 1.1rem 1.1rem; border-top:1px solid #1a2130; }
+  .vhead { font-size:.78rem; color:var(--dim); margin-bottom:.5rem; }
+  .vrow { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.6rem; }
+  .vrow figure { margin:0; }
+  .vrow img { width:100%; border:1px solid var(--line); border-radius:6px; display:block; }
+  .vrow figcaption { font-size:.7rem; color:var(--dim); text-align:center; margin-top:.25rem;
+    text-transform:uppercase; letter-spacing:.08em; }
   .foot { color:var(--dim); font-size:.78rem; margin-top:2rem; }
 </style></head><body><div class="wrap">
   <h1>Test report</h1>

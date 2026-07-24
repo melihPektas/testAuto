@@ -172,6 +172,13 @@
   .tri .repair .outcome { font-size: 0.8rem; }
   .tri .repair .outcome code { color: #cfe0ff; }
   details.shot img { max-width: 100%; margin-top: 0.4rem; border: 1px solid var(--border); border-radius: 9px; display: block; }
+  .visual { margin-top: 0.5rem; }
+  .visual .vhead { font-size: 0.76rem; color: var(--muted); margin-bottom: 0.35rem; }
+  .visual .vrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.4rem; }
+  .visual figure { margin: 0; }
+  .visual img { width: 100%; border: 1px solid var(--border); border-radius: 7px; display: block; }
+  .visual figcaption { font-size: 0.66rem; color: var(--muted); text-align: center; margin-top: 0.2rem;
+    text-transform: uppercase; letter-spacing: 0.08em; }
 
   /* ---- misc ---- */
   #log {
@@ -535,7 +542,19 @@
         bits.push('page has <code>' + ev.similarSelectors.map(esc).join('</code> <code>') + '</code>');
       }
       if (ev.excerpt) bits.push('“' + esc(String(ev.excerpt).slice(0, 90)) + '”');
-      const shot = ev.screenshot
+      const img = (p, cap) =>
+        '<figure><img loading="lazy" alt="' + cap + '" src="/api/artifact?path=' +
+        encodeURIComponent(p) + '" /><figcaption>' + cap + '</figcaption></figure>';
+      // A visual regression is the one failure you cannot read: show it.
+      const visual = ev.visualDiff || ev.visualActual
+        ? '<div class="visual"><div class="vhead">visual difference — ' +
+            esc(ev.visualRatio) + '% of pixels</div><div class="vrow">' +
+            (ev.visualBaseline ? img(ev.visualBaseline, 'baseline') : '') +
+            (ev.visualActual ? img(ev.visualActual, 'actual') : '') +
+            (ev.visualDiff ? img(ev.visualDiff, 'diff') : '') +
+          '</div></div>'
+        : '';
+      const shot = visual === '' && ev.screenshot
         ? '<details class="shot"><summary>screenshot</summary><img loading="lazy" ' +
           'alt="the page when the step failed" src="/api/artifact?path=' +
           encodeURIComponent(ev.screenshot) + '" /></details>'
@@ -546,7 +565,7 @@
           '<div class="why">' + esc(t.reason) + '</div>' +
           (t.suggestion ? '<div class="fix">→ ' + esc(t.suggestion) + '</div>' : '') +
           (bits.length ? '<div class="ev">' + bits.join(' · ') + '</div>' : '') +
-          shot +
+          visual + shot +
           '<div class="meta' + (t.confidence === 'low' ? ' low' : '') + '">' +
             esc(t.confidence) + ' confidence · decided by ' + esc(t.source) + '</div>' +
           (t.verdict === 'test-bug' && t.confidence === 'high' && t.file

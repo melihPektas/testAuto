@@ -79,6 +79,8 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
   let network: NetworkRecorder | undefined;
   // Where to keep this test's trace if it fails; undefined means keep nothing.
   let traceTarget: string | undefined;
+  // The three images from a failed visual comparison, for the evidence.
+  let lastVisual: Record<string, unknown> | undefined;
   const consoleErrors: string[] = [];
 
   /** Capture the page for whichever failure path got here first. */
@@ -114,6 +116,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       apiCalls: net.apiCalls,
       ...(failedApiCalls.length > 0 ? { failedApiCalls } : {}),
       ...(trace !== undefined ? { trace } : {}),
+      ...(lastVisual ?? {}),
     };
   }
 
@@ -418,6 +421,19 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
           if (comparison.diff !== undefined) {
             await writeFile(join(ctx.workspace.artifacts, diffRel), comparison.diff);
           }
+          // Copy the baseline in beside the other two, so all three live in one
+          // place a report or the dashboard can read relative paths from.
+          const baselineRel = join(slug(ctx.testCase.id), `${name}-baseline.png`);
+          await writeFile(join(ctx.workspace.artifacts, baselineRel), baseline);
+
+          // Hand the three images to the evidence: a visual failure read as text
+          // says nothing, and the point is to look at it.
+          lastVisual = {
+            visualBaseline: baselineRel,
+            visualActual: actualRel,
+            ...(comparison.diff === undefined ? {} : { visualDiff: diffRel }),
+            visualRatio: Number((comparison.ratio * 100).toFixed(2)),
+          };
           const pct = (comparison.ratio * 100).toFixed(2);
           const limit = (maxRatio * 100).toFixed(2);
           throw new Error(`${pct}% of pixels changed (limit ${limit}%); see ${diffRel}`);
@@ -520,6 +536,7 @@ export function createBrowserRunner(name = 'browser', options: BrowserRunnerOpti
       browser ??= await chromium.launch({ headless: options.headed !== true });
       context = await browser.newContext();
       traceTarget = undefined;
+      lastVisual = undefined;
       if (options.trace === true) {
         await context.tracing.start({ screenshots: true, snapshots: true });
       }

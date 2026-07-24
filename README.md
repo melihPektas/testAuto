@@ -627,7 +627,10 @@ seconds, and a dashboard that sits silent for a minute reads as hung.
 
 `expectScreenshot` writes the baseline to `.baselines/<test-case>/` — commit
 those; the diff and the actual shot of a failure go to `.artifacts/`, which you
-do not. The first run creates the baseline and says so, because a silently
+do not. On a failure all three images travel in the evidence, so the HTML report
+and the dashboard show **baseline, actual and diff side by side** rather than
+naming a file path nobody will open — a visual regression is the one failure you
+cannot read. The first run creates the baseline and says so, because a silently
 created baseline is a check that never actually ran.
 
 ## ⚠️ Limits worth knowing
