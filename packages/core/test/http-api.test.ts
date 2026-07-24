@@ -186,3 +186,71 @@ describe('capture — stateful chains', () => {
     expect(steps[1]?.error?.message).toContain('not JSON');
   });
 });
+
+describe('expectResponseSchema — conformance per status', () => {
+  const errorSchema = {
+    type: 'object',
+    required: ['error'],
+    properties: { error: { type: 'string' } },
+  };
+
+  it('checks a 404 against the 404 schema, not the 200 one', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /missing' },
+      {
+        id: 'schema',
+        action: 'expectResponseSchema',
+        value: { '200': productSchema, '404': errorSchema },
+      },
+    ]);
+    expect(steps[1]?.status).toBe('pass');
+    expect(steps[1]?.output).toContain('404 matches');
+  });
+
+  it('fails when the error body breaks its own declared shape', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /teapot' },
+      {
+        id: 'schema',
+        action: 'expectResponseSchema',
+        // the 418 body is {error: "no coffee"}; demand a numeric code instead
+        value: {
+          '418': { type: 'object', required: ['code'], properties: { code: { type: 'number' } } },
+        },
+      },
+    ]);
+    expect(steps[1]?.status).toBe('fail');
+    expect(steps[1]?.error?.message).toContain('does not match its declared schema');
+  });
+
+  it('falls back to a status family, then to default', async () => {
+    const byFamily = await run([
+      { id: 'call', action: 'request', target: 'GET /missing' },
+      { id: 'schema', action: 'expectResponseSchema', value: { '4xx': errorSchema } },
+    ]);
+    expect(byFamily[1]?.status).toBe('pass');
+
+    const byDefault = await run([
+      { id: 'call', action: 'request', target: 'GET /missing' },
+      { id: 'schema', action: 'expectResponseSchema', value: { default: errorSchema } },
+    ]);
+    expect(byDefault[1]?.status).toBe('pass');
+  });
+
+  it('passes when the spec promised nothing for this status', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /teapot' },
+      { id: 'schema', action: 'expectResponseSchema', value: { '200': productSchema } },
+    ]);
+    expect(steps[1]?.status).toBe('pass');
+    expect(steps[1]?.output).toContain('no schema declared for 418');
+  });
+
+  it('fails when a declared schema meets a non-JSON body', async () => {
+    const steps = await run([
+      { id: 'call', action: 'request', target: 'GET /not-json' },
+      { id: 'schema', action: 'expectResponseSchema', value: { '200': productSchema } },
+    ]);
+    expect(steps[1]?.error?.message).toContain('not JSON');
+  });
+});

@@ -269,7 +269,8 @@ describe('schema-derived fuzzing', () => {
       steps: { action: string; value?: unknown }[];
     };
     // accepting or rejecting bad input are both fine; crashing is not
-    expect(parsed.steps.at(-1)).toMatchObject({ action: 'expectStatusIn', value: ['2xx', '4xx'] });
+    const alive = parsed.steps.find((s) => s.action === 'expectStatusIn');
+    expect(alive).toMatchObject({ action: 'expectStatusIn', value: ['2xx', '4xx'] });
   });
 
   it('respects the per-operation cap', () => {
@@ -412,5 +413,64 @@ describe('fuzzing a path parameter', () => {
     const parsed = JSON.parse(queryFuzz?.content ?? '{}') as { steps: { target?: string }[] };
     expect(parsed.steps[0]?.target).toContain('category=');
     expect(parsed.steps[0]?.target).not.toContain('category=test');
+  });
+});
+
+describe('response conformance on fuzz cases', () => {
+  const specWithErrors = {
+    ...spec,
+    paths: {
+      ...spec.paths,
+      '/products/{id}': {
+        parameters: [{ name: 'id', in: 'path', schema: { type: 'string' } }],
+        get: {
+          operationId: 'getProduct',
+          responses: {
+            200: {
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Product' } } },
+            },
+            404: {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['error'],
+                    properties: { error: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  it('collects a schema for every declared status, not just the success one', () => {
+    const op = parseSpec(specWithErrors).operations.find((o) => o.operationId === 'getProduct');
+    expect(Object.keys(op?.responseSchemas ?? {}).sort()).toEqual(['200', '404']);
+  });
+
+  it('holds a fuzz case to the schema for whatever status came back', () => {
+    const { cases } = generateApiTests(parseSpec(specWithErrors), { fuzz: true });
+    const fuzzed = cases.find((c) => c.name.startsWith('GET /products/{id} with'));
+    const parsed = JSON.parse(fuzzed?.content ?? '{}') as {
+      steps: { action: string; value?: unknown }[];
+    };
+    const conforms = parsed.steps.find((s) => s.action === 'expectResponseSchema');
+    expect(conforms).toBeDefined();
+    // both the success and the error shape travel with the case
+    expect(Object.keys(conforms?.value as Record<string, unknown>).sort()).toEqual(['200', '404']);
+  });
+
+  it('adds no conformance step when the spec declares no schemas', () => {
+    const bare = {
+      openapi: '3.0.0',
+      info: { title: 'bare', version: '1' },
+      paths: { '/ping': { get: { operationId: 'ping', responses: { 200: {} } } } },
+    };
+    const { cases } = generateApiTests(parseSpec(bare), { fuzz: true });
+    const all = cases.map((c) => c.content).join('');
+    expect(all).not.toContain('expectResponseSchema');
   });
 });

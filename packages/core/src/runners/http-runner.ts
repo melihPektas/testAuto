@@ -155,6 +155,39 @@ export function createHttpRunner(name = 'http', options: HttpRunnerOptions = {})
             }
             return { status: 'pass', durationMs: Date.now() - start, output: `status ${actual}` };
           }
+          case 'expectResponseSchema': {
+            // The spec documents a schema per status. Pick the one that matches
+            // what actually came back — exact code, then family, then default —
+            // so a 404 is checked against the 404 schema, not the 200 one.
+            const map = (step?.value ?? {}) as Record<string, unknown>;
+            const code = String(lastStatus ?? '');
+            const schema = map[code] ?? map[`${code.slice(0, 1)}xx`] ?? map['default'];
+            if (schema === undefined) {
+              // Nothing promised for this status, so nothing to hold it to.
+              return {
+                status: 'pass',
+                durationMs: Date.now() - start,
+                output: `no schema declared for ${code}`,
+              };
+            }
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(lastBody);
+            } catch {
+              throw new Error(`response for ${code} is not JSON, but the spec declares a schema`);
+            }
+            const result = validateAgainst(schema, parsed);
+            if (!result.ok) {
+              throw new Error(
+                `the ${code} response does not match its declared schema: ${formatAjvErrors(result.errors)}`,
+              );
+            }
+            return {
+              status: 'pass',
+              durationMs: Date.now() - start,
+              output: `${code} matches its declared schema`,
+            };
+          }
           case 'expectSchema': {
             let parsed: unknown;
             try {

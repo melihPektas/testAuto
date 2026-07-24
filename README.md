@@ -283,6 +283,18 @@ with a broken id, so the server is in a real state rather than answering a cold
 lookup. Hostile inputs are generated first, so when the per-operation cap cuts
 the list the cases most likely to find a crash are the ones that survive.
 
+Every fuzz case also holds the answer to the spec. A schema is collected for
+**each declared status**, not just the successful one, and the response is
+validated against the schema for whatever status actually came back — a 404
+against the 404 schema, falling back to the status family then `default`, and
+passing silently when the spec promised nothing for that code. A server that
+documents its 400 has made a promise about the error body too.
+
+That catches a class of defect nothing else here would: on the demoshop API,
+changing a 404 body from `{error}` to `{message}` left every request correctly
+rejected and every status correct — and the conformance step failed anyway,
+because the shape no longer matched what the spec declared.
+
 Payloads are URL-encoded into a single path segment. That keeps a generated
 suite from actually walking a directory, and it means this finds handler bugs
 rather than encoding-layer ones — a double-decode bug needs a raw request and is

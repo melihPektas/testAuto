@@ -91,7 +91,14 @@
             }
           },
           "404": {
-            "description": "no such product"
+            "description": "no such product",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -209,6 +216,15 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string"
           }
         }
       }

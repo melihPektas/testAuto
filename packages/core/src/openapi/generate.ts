@@ -184,6 +184,12 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
     if (options.fuzz === true) {
       let made = 0;
       const cap = options.maxFuzzPerOperation ?? 10;
+      // The name has to say what the case actually checks; with declared
+      // schemas it holds the answer to its own shape as well as to not-5xx.
+      const conforms = Object.keys(op.responseSchemas).length > 0;
+      const outcome = conforms
+        ? 'must not 5xx, and must match its declared schema'
+        : 'must not 5xx';
 
       for (const p of op.parameters) {
         if (made >= cap || (p.in !== 'query' && p.in !== 'path')) {
@@ -199,11 +205,16 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
           const target = buildTarget(op, undefined, { name: p.name, value: mutation.value });
           push(
             slug(`${base}-fuzz-${mutation.label}`),
-            `${label} with ${mutation.label} → must not 5xx`,
+            `${label} with ${mutation.label} → ${outcome}`,
             [
               ...auth,
               { id: 'call', action: 'request', target },
               { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+              // Whatever it answers with, the spec said what that answer looks
+              // like — a documented 400 is a promise about the error body too.
+              ...(Object.keys(op.responseSchemas).length > 0
+                ? [{ id: 'conforms', action: 'expectResponseSchema', value: op.responseSchemas }]
+                : []),
             ],
           );
         }
@@ -234,7 +245,7 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
             made += 1;
             push(
               slug(`${base}-fuzz-body-${mutation.label}`),
-              `${label} with ${mutation.label} → must not 5xx`,
+              `${label} with ${mutation.label} → ${outcome}`,
               [
                 ...auth,
                 {
@@ -244,6 +255,9 @@ export function generateApiTests(spec: ApiSpec, options: GenerateApiOptions = {}
                   value: mutateBody(body, key, mutation.value),
                 },
                 { id: 'alive', action: 'expectStatusIn', value: ['2xx', '4xx'] },
+                ...(Object.keys(op.responseSchemas).length > 0
+                  ? [{ id: 'conforms', action: 'expectResponseSchema', value: op.responseSchemas }]
+                  : []),
               ],
             );
           }

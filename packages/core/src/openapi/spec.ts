@@ -23,6 +23,8 @@ export interface Operation {
   readonly successStatuses: number[];
   /** JSON schema for the first documented success response, if any. */
   readonly responseSchema: unknown;
+  /** Schema per declared status code (`"200"`, `"404"`, `"default"`, …). */
+  readonly responseSchemas: Record<string, unknown>;
   /** Example or schema-derived body for a request that needs one. */
   readonly requestBody: unknown;
   /** The request body's JSON schema, when it declares one — used for fuzzing. */
@@ -227,6 +229,18 @@ export function parseSpec(document: unknown): ApiSpec {
         ? resolveSchema(successMedia['schema'], root)
         : undefined;
 
+      // Every declared status, not just the successful one: a spec that
+      // documents its 400 is making a promise about the error body too, and an
+      // API that breaks that promise is as non-conforming as one that breaks
+      // its 200.
+      const responseSchemas: Record<string, unknown> = {};
+      for (const [code, node] of Object.entries(responses)) {
+        const media = jsonContent(node, root);
+        if (isDict(media) && media['schema'] !== undefined) {
+          responseSchemas[code] = resolveSchema(media['schema'], root);
+        }
+      }
+
       const bodyNode = deref(op['requestBody'], root);
       const bodyMedia = jsonContent(bodyNode, root);
       const bodySchema = isDict(bodyMedia) ? resolveSchema(bodyMedia['schema'], root) : undefined;
@@ -242,6 +256,7 @@ export function parseSpec(document: unknown): ApiSpec {
         parameters: [...shared, ...collectParameters(op['parameters'], root)],
         successStatuses: successStatuses.length > 0 ? successStatuses : [200],
         responseSchema,
+        responseSchemas,
         requestBody: bodyExample ?? (bodySchema === undefined ? undefined : sampleFor(bodySchema)),
         requestBodySchema: bodySchema,
         requestBodyRequired: isDict(bodyNode) && bodyNode['required'] === true,
